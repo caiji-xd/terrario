@@ -107,9 +107,6 @@ int mainMenu()
 		{
 			switch(key.key)
 			{
-				case KEY_OPTN:
-					if(key.type == KEYEV_DOWN) gint_world_switch(GINT_CALL(&takeVRAMCapture));
-					break;
 
 				case KEY_MENU:
 					timer_stop(timer);
@@ -223,8 +220,9 @@ void loadFailMenu()
 	if(save.error > -1) dprint(0, 8, C_BLACK, "\\TERRARIO\\reg%i-%i.dat", save.error >> 4, save.error & 0xf);
 	if(save.error == -1) dtext(0, 8, C_BLACK, "\\TERRARIO\\player.dat");
 	if(save.error == -2) dtext(0, 8, C_BLACK, "\\TERRARIO\\housing.dat");
-	dtext(0, 16, C_BLACK, "Please report bug or");
-	dtext(0, 24, C_BLACK, "delete \\TERRARIO.");
+	if(save.error == -3) dtext(0, 8, C_BLACK, "\\TERRARIO\\save.info");
+	if(save.error == -4) dtext(0, 8, C_BLACK, "\\TERRARIO\\chests.dat");
+	dtext(0, 16, C_BLACK, "Save data unavailable");
 	dtext(0, 40, C_BLACK, "[EXIT] to exit");
 	dupdate();
 
@@ -248,10 +246,12 @@ void saveFailMenu()
 
 	dclear(C_WHITE);
 	dtext(0, 0, C_BLACK, "Failed to write");
-	dprint(0, 8, C_BLACK, "\\TERRARIO\\reg%i-%i.dat", save.error >> 4, save.error & 0xf);
-	dtext(0, 16, C_BLACK, "Please optimise SMEM");
-	dtext(0, 24, C_BLACK, "and ensure 250kB free");
-	dtext(0, 32, C_BLACK, "if this is a new save");
+	if(save.error >= 0) dprint(0, 8, C_BLACK, "\\TERRARIO\\reg%i-%i.dat", save.error >> 4, save.error & 0xf);
+	else if(save.error == -1) dtext(0, 8, C_BLACK, "player.dat");
+	else if(save.error == -2) dtext(0, 8, C_BLACK, "housing.dat");
+	else if(save.error == -4) dtext(0, 8, C_BLACK, "chests.dat");
+	else dtext(0, 8, C_BLACK, "save.info / folder");
+	dtext(0, 24, C_BLACK, "Save failed");
 	dtext(0, 48, C_BLACK, "[EXIT] to exit");
 	dupdate();
 
@@ -398,7 +398,7 @@ void itemMenu()
 				return;
 			
 			case KEY_F5:
-				gint_world_switch(GINT_CALL(&saveGame));
+				saveGame();
 				return;
 			
 			case KEY_F6:

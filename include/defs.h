@@ -30,7 +30,7 @@ extern struct GameCompatibilityPresets game;
 #define allocCheck(x) if((x) == NULL) memoryErrorMenu()
 
 #ifndef DEBUGMODE
-#define VERSION "v0.10.0"
+#define VERSION "v0.10.0-safe1"
 #else
 #define VERSION "DEBUG BUILD!"
 #endif
@@ -57,7 +57,9 @@ extern struct GameCompatibilityPresets game;
 #define INVENTORY_SIZE 24
 
 // Arbitrary size, not using GYRAM for much else
-#define MAX_REGIONS 1000
+#define MAX_REGIONS 36
+#define MAX_HOUSE_MARKERS 32
+#define MAX_NPCS 2
 
 // 12 minutes
 #define DAY_TICKS 43200

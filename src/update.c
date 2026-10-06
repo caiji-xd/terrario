@@ -14,20 +14,50 @@
 #include "render.h"
 #include "chat.h"
 
+static void useBucket()
+{
+	Item *item = player.inventory.getSelected();
+	if(item->amount <= 0 || (unsigned)item->id >= ITEMS_COUNT) return;
+	int x = player.cursorTile.x, y = player.cursorTile.y;
+	if((unsigned)x >= (unsigned)game.WORLD_WIDTH || (unsigned)y >= (unsigned)game.WORLD_HEIGHT) return;
+	bool pouring = item->id == ITEM_WATER_BUCKET;
+	if(!pouring && item->id != ITEM_EMPTY_BUCKET) return;
+	if(pouring ? !tiles[getTile(x, y).id].canFlood : getTile(x, y).id != TILE_WATER) return;
+	enum Items result = pouring ? ITEM_EMPTY_BUCKET : ITEM_WATER_BUCKET;
+	/* Transform a single bucket in-place, even when the inventory is full.
+	   A larger empty-bucket stack needs room before changing the world. */
+	if(item->amount == 1) *item = (Item){result, PREFIX_NONE, 1};
+	else {
+		int slot = player.inventory.getFirstFreeSlot(result);
+		if(slot < 0) return;
+		Item bucket = {result, PREFIX_NONE, 1};
+		player.inventory.stackItem(&player.inventory.items[slot], &bucket);
+		if(bucket.amount != 0) return;
+		player.inventory.removeItem(item);
+	}
+	setTile(x, y, pouring ? TILE_WATER : TILE_NOTHING);
+	setVar(x, y);
+	player.inventory.ticksSinceInteracted = 0;
+	player.useFrames = 15;
+	registerHeld();
+}
+
 void useHeld()
 {
 	struct PickData *heldPickData;
 	const struct ItemData *itemData;
 	bool validSupport;
 	Item *item;
-	int slot;
 	int x, y;
 	bool validLeft, validRight, validTop, validBottom;
 	enum Tiles tile;
 
 	if(player.useFrames > 0) return;
 
-	itemData = &items[player.inventory.getSelected()->id];
+	item = player.inventory.getSelected();
+	if((unsigned)item->id >= ITEMS_COUNT || item->amount <= 0) return;
+	if(item->id == ITEM_EMPTY_BUCKET || item->id == ITEM_WATER_BUCKET) { useBucket(); return; }
+	itemData = &items[item->id];
 //	Picks and swords
 	if(itemData->type == TOOL_TYPE_PICK || itemData->type == TOOL_TYPE_SWORD)
 	{
@@ -104,22 +134,9 @@ void useHeld()
 		{
 			if(validLeft || validRight || validTop || validBottom || tiles[tile].physics == PHYS_NON_SOLID)
 			{
-				if(item->id == ITEM_WATER_BUCKET)
-				{
-					slot = player.inventory.getFirstFreeSlot(ITEM_EMPTY_BUCKET);
-					player.inventory.stackItem(&player.inventory.items[slot], &(Item){ITEM_EMPTY_BUCKET, PREFIX_NONE, 1});
-				}
 				world.placeTile(x, y, item);
 				registerGhost();
 			}
-		}
-		else if(item->id == ITEM_EMPTY_BUCKET && getTile(x, y).id == TILE_WATER)
-		{
-			slot = player.inventory.getFirstFreeSlot(ITEM_WATER_BUCKET);
-			player.inventory.stackItem(&player.inventory.items[slot], &(Item){ITEM_WATER_BUCKET, PREFIX_NONE, 1});
-			player.inventory.removeItem(item);
-			setTile(x, y, TILE_NOTHING);
-			regionChange(x, y);
 		}
 	}
 }
@@ -143,9 +160,6 @@ enum UpdateReturnCodes keyboardUpdate()
 	{
 		switch(key.key)
 		{
-			case KEY_OPTN:
-				if(key.type == KEYEV_DOWN) gint_world_switch(GINT_CALL(&takeVRAMCapture));
-				break;
 			
 			case KEY_SHIFT:
 				player.inventory.ticksSinceInteracted = 0;
@@ -157,7 +171,7 @@ enum UpdateReturnCodes keyboardUpdate()
 					key.key = KEY_ALPHA;
 					continue;
 				}
-				registerGhost();
+				registerHeld();
 				break;
 			case KEY_ALPHA:
 				player.inventory.ticksSinceInteracted = 0;
@@ -169,7 +183,7 @@ enum UpdateReturnCodes keyboardUpdate()
 					key.key = KEY_SHIFT;
 					continue;
 				}
-				registerGhost();
+				registerHeld();
 				break;
 			
 			case KEY_8:
@@ -284,14 +298,14 @@ enum UpdateReturnCodes keyboardUpdate()
 						case ITEM_LESSER_HEALING_POTION:
 							if(player.combat.health >= player.maxHealth) break;
 
-							player.combat.health = max(player.combat.health + 50, player.maxHealth);
+							player.combat.health = min(player.combat.health + 50, player.maxHealth);
 
 							consumed = 1;
 							break;
 						case ITEM_MUSHROOM:
 							if(player.combat.health >= player.maxHealth) break;
 
-							player.combat.health = max(player.combat.health + 15, player.maxHealth);
+							player.combat.health = min(player.combat.health + 15, player.maxHealth);
 
 							consumed = 1;
 							break;
@@ -328,23 +342,6 @@ enum UpdateReturnCodes keyboardUpdate()
 
 	if(!playerDead)
 	{
-//		Fun debug thing, will remove sometime
-//		-----
-		static int which = 0;
-		if(keydown(KEY_DOT))
-		{
-			x = player.cursorTile.x;
-			y = player.cursorTile.y;
-			if(which == 0)
-			{
-				if(getTile(x, y).id == TILE_NOTHING) which = 1;
-				else which = 2;
-			}
-			if(getTile(x, y).id == TILE_NOTHING && which == 1) setTile(x, y, TILE_WATER);
-			else if(getTile(x, y).id == TILE_WATER && which == 2) setTile(x, y, TILE_NOTHING);
-		}
-		else which = 0;
-//		-----
 		if(keydown(KEY_8) && !player.jumpReleased && player.jumpTimer < 15)
 		{
 			player.props.yVel = -3.5;
@@ -378,7 +375,7 @@ enum UpdateReturnCodes keyboardUpdate()
 		player.cursor.y = min(max(0, player.cursor.y), SCREEN_HEIGHT - 1);
 	}
 
-	if(keydown_all(KEY_XOT, KEY_EXP, 0)) itemMenu();
+
 
 	return UPDATE_CONTINUE;
 }
@@ -580,18 +577,29 @@ void worldUpdate()
 //			Grass spread
 			else if(tile == TILE_DIRT)
 			{
-				if(findState(x, y) != 0xf
+				if(rand() % 275 == 0 && findState(x, y) != 0xf
 				&& (getTile(x - 1, y).id == TILE_GRASS 
 					|| getTile(x + 1, y).id == TILE_GRASS
 					|| getTile(x, y + 1).id == TILE_GRASS
 					|| getTile(x, y - 1).id == TILE_GRASS)
-				&& rand() % 275 == 0) setTile(x, y, TILE_GRASS);
+				) setTile(x, y, TILE_GRASS);
+			}
+//			Jungle grass spread
+			else if(tile == TILE_MUD)
+			{
+				if(rand() % 275 == 0 && findState(x, y) != 0xf
+				&& (getTile(x - 1, y).id == TILE_GRASS_JUNGLE 
+					|| getTile(x + 1, y).id == TILE_GRASS_JUNGLE
+					|| getTile(x, y + 1).id == TILE_GRASS_JUNGLE
+					|| getTile(x, y - 1).id == TILE_GRASS_JUNGLE)
+				) setTile(x, y, TILE_GRASS_JUNGLE);
 			}
 //			Torch animation
 			else if(tile == TILE_TORCH)
 			{
 				virtX = x - varBufferPos.x;
 				virtY = y - varBufferPos.y;
+				if((unsigned)virtX >= VAR_BUF_WIDTH || (unsigned)virtY >= VAR_BUF_HEIGHT) continue;
 				if(varBuffer[virtY][virtX] == 2) varBuffer[virtY][virtX] = 0;
 				else varBuffer[virtY][virtX]++;
 			}

@@ -41,11 +41,6 @@ renderHUD: Whether to render the HUD.
 */
 void render(bool renderHUD);
 
-/* takeVRAMCapture
-Stores the state of the drawing VRAMS to capt.vram.
-*/
-void takeVRAMCapture();
-
 /* renderItem
 Renders the given item.
 

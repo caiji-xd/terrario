@@ -302,7 +302,8 @@ void render(bool renderHUD)
 			entSubrectX = player.anim.direction ? 16 : 0;
 			dsubimage(entX, entY + 15, &img_player, entSubrectX, entSubrectY + 15, player.props.width + 4, player.props.height - 14, DIMAGE_NONE);
 
-			entSubrectY = (4 - (player.swingFrame >> 3)) * (player.props.height + 2) + 1;
+			int swingIndex = 3 - min(3, max(0, player.swingFrame >> 3));
+			entSubrectY = (swingIndex + 1) * (player.props.height + 2) + 1;
 			dsubimage(entX, entY, &img_player, entSubrectX, entSubrectY, player.props.width + 4, 15, DIMAGE_NONE);
 
 //			Get the appropriate swing sprite
@@ -312,13 +313,13 @@ void render(bool renderHUD)
 
 //			Might have to generalise for different sized sprites
 			entX += (player.props.width >> 1) + (player.anim.direction ? -12 : 0);
-			entX += swingHandleDeltaPositions[3 - (player.swingFrame >> 3)][0] * (player.anim.direction ? -1 : 1);
-			entY += swingHandleDeltaPositions[3 - (player.swingFrame >> 3)][1];
+			entX += swingHandleDeltaPositions[swingIndex][0] * (player.anim.direction ? -1 : 1);
+			entY += swingHandleDeltaPositions[swingIndex][1];
 
-			entSubrectX = (3 - (player.swingFrame >> 3)) * 17 + 1;
+			entSubrectX = swingIndex * 17 + 1;
 			entSubrectY = player.anim.direction ? 17 : 0;
 
-			dsubimage(entX, entY, swingSprite, entSubrectX, entSubrectY, 16, 16, DIMAGE_NONE);
+			if(swingSprite != NULL) dsubimage(entX, entY, swingSprite, entSubrectX, entSubrectY, 16, 16, DIMAGE_NONE);
 		}
 
 		if(renderHUD) dimage(player.cursor.x - 2, player.cursor.y - 2, &img_ui_cursor);
@@ -391,23 +392,6 @@ void render(bool renderHUD)
 
 //	Render the chat
 	renderChat();
-}
-
-void takeVRAMCapture()
-{
-	uint32_t *light;
-	uint32_t *dark;
-	uint16_t *path = u"\\\\fls0\\capt.vram";
-	int descriptor;
-	int size = 2048;
-
-	BFile_Remove(path);
-	BFile_Create(path, BFile_File, &size);
-	descriptor = BFile_Open(path, BFile_WriteOnly);
-	dgray_getvram(&light, &dark);
-	BFile_Write(descriptor, light, 1024);
-	BFile_Write(descriptor, dark, 1024);
-	BFile_Close(descriptor);
 }
 
 void createExplosion(int x, int y)
@@ -581,7 +565,7 @@ void updateVarBuffer(int x, int y)
 		{
 			fillVarBuffer(
 				0,
-				offsetY > 0 ? VAR_BUF_HEIGHT - offsetY - 1 : 0,
+				offsetY > 0 ? VAR_BUF_HEIGHT - offsetY : 0,
 				VAR_BUF_WIDTH,
 				abs(offsetY)
 			);
@@ -589,7 +573,7 @@ void updateVarBuffer(int x, int y)
 		if(offsetX != 0)
 		{
 			fillVarBuffer(
-				offsetX > 0 ? VAR_BUF_WIDTH - offsetX - 1 : 0,
+				offsetX > 0 ? VAR_BUF_WIDTH - offsetX : 0,
 				0,
 				abs(offsetX),
 				VAR_BUF_HEIGHT

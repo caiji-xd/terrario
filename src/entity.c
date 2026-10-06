@@ -405,17 +405,16 @@ void handlePhysics(struct EntityPhysicsProps *self, int frames, bool onlyCollisi
 
 	if(fabsf(self->xVel) < 0.01) self->xVel = 0;
 
-//	Interpolate X velocity
+// Interpolate nonzero fractional velocities only. Integer velocities have
+	// no fractional period; 1/0 followed by frames % 0 was undefined behavior.
 	fractional = modf(self->xVel, &integer);
-	if(fabsf(self->xVel) < 1 && frames % (int)roundf(1.0 / self->xVel) == 0) self->x += sgn(self->xVel);
-	else if(fabsf(self->xVel) > 1 && frames % (int)roundf(1.0 / fractional) == 0) self->x += integer + sgn(self->xVel);
-	else self->x += integer;
-
-//	Interpolate Y velocity
+	self->x += (int)integer;
+	if(fabs(fractional) > 0.01 && frames % max(1, (int)round(1.0 / fabs(fractional))) == 0)
+		self->x += sgn(self->xVel);
 	fractional = modf(self->yVel, &integer);
-	if(fabsf(self->yVel) < 1 && frames % (int)roundf(1.0 / self->yVel) == 0) self->y += sgn(self->yVel);
-	else if(fabsf(self->yVel) > 1 && frames % (int)roundf(1.0 / fractional) == 0) self->y += integer + sgn(self->yVel);
-	else self->y += integer;
+	self->y += (int)integer;
+	if(fabs(fractional) > 0.01 && frames % max(1, (int)round(1.0 / fabs(fractional))) == 0)
+		self->y += sgn(self->yVel);
 
 #ifndef DEBUGMODE
 	self->touchingTileTop = false;

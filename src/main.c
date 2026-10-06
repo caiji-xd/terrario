@@ -24,8 +24,8 @@
 #include "npc.h"
 #include "chat.h"
 
-// Fixes implicit declaration warning (feature is not meant for use in normal addins)
-void spu_zero();
+// Referencing this symbol links gint's SPU driver, which enables P-RAM.
+int spu_zero(void);
 
 // Syscalls
 const unsigned int sc003B[] = { SCA, SCB, SCE, 0x003B };
@@ -35,8 +35,8 @@ const unsigned int sc042E[] = { SCA, SCB, SCE, 0x042E };
 const unsigned int sc015F[] = { SCA, SCB, SCE, 0x015F };
 
 // Global variables
-GYRAM char varBuffer[VAR_BUF_HEIGHT][VAR_BUF_WIDTH];
-GYRAM struct SaveData save;
+char varBuffer[VAR_BUF_HEIGHT][VAR_BUF_WIDTH];
+struct SaveData save;
 struct World world;
 struct Player player;
 char versionBuffer[16];
@@ -52,18 +52,13 @@ int frameCallback(volatile int *flag)
 // Checks if the RAM we'll be using to store world tiles works
 bool testRAM()
 {
-	unsigned int *RAMAddress = game.RAM_START;
-	unsigned int save = *RAMAddress;
-//	Ensures this isn't a 256kB-RAM calc
-	if(gint[HWRAM] < 500000) return false;
-	*RAMAddress = 0xC0FFEE;
-	if(*RAMAddress == 0xC0FFEE)
-	{
-		*RAMAddress = save;
-		return true;
-	}
-	*RAMAddress = save;
-	return false;
+	if(game.HWMODE == MODE_RAM && gint[HWRAM] < 512 * 1024) return false;
+	volatile uint32_t *address = game.RAM_START;
+	uint32_t previous = *address;
+	*address = 0x00c0ffee;
+	bool ok = *address == 0x00c0ffee;
+	*address = previous;
+	return ok;
 }
 
 void setPlayerSpawn()
@@ -71,7 +66,7 @@ void setPlayerSpawn()
 	int playerX = (game.WORLD_WIDTH / 2);
 	int playerY = 0;
 
-	while(tiles[getTile(playerX, playerY).id].physics == PHYS_NON_SOLID && playerY < game.WORLD_HEIGHT) playerY++;
+	while(playerY < game.WORLD_HEIGHT - 1 && tiles[getTile(playerX, playerY).id].physics == PHYS_NON_SOLID) playerY++;
 
 	player.spawn.x = playerX << 3;
 	player.spawn.y = (playerY << 3) - player.props.height;
@@ -111,6 +106,7 @@ bool gameLoop(volatile int *flag)
 				respawnCounter = 0;
 				player.combat.currImmuneFrames = player.combat.immuneFrames;
 				player.breath = 200;
+				player.pixelsFallen = 0;
 			}
 			else if(respawnCounter > 0) respawnCounter--;
 			else
@@ -148,7 +144,7 @@ int main(void)
 	int w, h;
 	int timer;
 	volatile int flag = 0;
-	int mediaFree[2];
+	int mediaFree[2] = {0, 0};
 	bool doSave;
 
 	__printf_enable_fixed();
@@ -166,6 +162,7 @@ int main(void)
 			break;
 		
 		case HWCALC_G35PE2:
+			/* GIII: keep the 160 kB world in SPU P-RAM, not the 61 kB heap. */
 			spu_zero();
 			game = (struct GameCompatibilityPresets) {
 				.HWMODE = MODE_PRAM,
@@ -183,8 +180,8 @@ int main(void)
 
 	save = (struct SaveData){
 		.tileDataSize = game.WORLD_HEIGHT * game.WORLD_WIDTH * sizeof(Tile),
-		.regionsX = game.WORLD_WIDTH / REGION_SIZE + 1,
-		.regionsY = game.WORLD_HEIGHT / REGION_SIZE + 1,
+		.regionsX = (game.WORLD_WIDTH + REGION_SIZE - 1) / REGION_SIZE,
+		.regionsY = (game.WORLD_HEIGHT + REGION_SIZE - 1) / REGION_SIZE,
 		.tileData = game.RAM_START,
 		.error = -99,
 	};
@@ -192,7 +189,6 @@ int main(void)
 	if(!testRAM()) 
 	{
 		incompatibleMenu(-99);
-		
 		return 1;
 	}
 
@@ -208,7 +204,7 @@ int main(void)
 	timer_wait(timer);
 
 	menuSelect = mainMenu();
-	if(menuSelect == -1) return 1;
+	if(menuSelect == -1) { dgray(DGRAY_OFF); return 1; }
 	
 	player = (struct Player){
 

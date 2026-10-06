@@ -166,7 +166,7 @@ void craftingMenu()
 				break;
 			}
 			if(recipe - selected < -4 || recipe - selected > 4) continue;
-			dsubimage((recipe - selected + 3) * 17 + 5, 0, &img_ui_slots, 0, 0, 16, 17, DIMAGE_NOCLIP);
+			dsubimage((recipe - selected + 3) * 17 + 5, 0, &img_ui_slots, 0, 0, 16, 17, DIMAGE_NONE);
 			renderItem((recipe - selected + 3) * 17 + 6, 1, (Item *)&recipes[currCraftable].result);
 		}
 		currCraftable = craftableRecipes[selected];
@@ -194,10 +194,6 @@ void craftingMenu()
 				if(key.type == KEYEV_DOWN) return;
 				break;
 
-			case KEY_OPTN:
-				if(key.type == KEYEV_DOWN) gint_world_switch(GINT_CALL(&takeVRAMCapture));
-				break;
-
 			case KEY_EXE:
 				currCraftable = craftableRecipes[selected];
 				if(currCraftable == -1) break;
@@ -211,6 +207,7 @@ void craftingMenu()
 					while(numLeft > 0)
 					{
 						slot = player.inventory.findSlot(currIngredient->id);
+						if(slot < 0) break;
 						if(player.inventory.items[slot].amount > numLeft)
 						{
 							player.inventory.items[slot].amount -= numLeft;
@@ -234,6 +231,7 @@ void craftingMenu()
 				while(result.id != ITEM_NULL)
 				{
 					slot = player.inventory.getFirstFreeSlot(recipes[currCraftable].result.id);
+					if(slot < 0) break;
 					player.inventory.stackItem(&player.inventory.items[slot], &result);
 				}
 

@@ -372,9 +372,6 @@ void inventoryMenu(struct Chest* chest)
 		key = getkey_opt(GETKEY_REP_PROFILE, NULL);
 		switch(key.key)
 		{
-			case KEY_OPTN:
-				if(key.type == KEYEV_DOWN) gint_world_switch(GINT_CALL(&takeVRAMCapture));
-				break;
 
 			case KEY_SHIFT: case KEY_ALPHA:
 				if(key.type == KEYEV_DOWN)
@@ -449,6 +446,7 @@ void inventoryMenu(struct Chest* chest)
 				break;
 
 			case KEY_DEL:
+				if(item == NULL) break;
 				*item = (Item){ITEM_NULL, PREFIX_NONE, 0};
 				break;
 
@@ -529,7 +527,11 @@ void registerEquipment()
 
 void registerHeld()
 {
-	unsigned int currID = player.inventory.getSelected()->id;
+	Item *selected = player.inventory.getSelected();
+	unsigned int currID = selected->id;
+	if(currID >= ITEMS_COUNT) { *selected = (Item){ITEM_NULL, PREFIX_NONE, 0}; currID = ITEM_NULL; }
+	if((unsigned)selected->prefix >= PREFIX_COUNT) selected->prefix = PREFIX_NONE;
+	if(items[currID].type != TOOL_TYPE_PICK && items[currID].type != TOOL_TYPE_SWORD) player.swingFrame = 0;
 
 	switch(items[currID].type)
 	{

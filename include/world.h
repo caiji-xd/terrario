@@ -98,6 +98,7 @@ enum Tiles {
 	TILE_SAWMILL_L, TILE_SAWMILL_R,
 	TILE_LOOM_L, TILE_LOOM_R,
 	TILE_BED_EDGE, TILE_BED_MID,
+	TILE_GRASS_JUNGLE,
 
 	TILES_COUNT
 };
@@ -153,36 +154,35 @@ extern struct ItemLootTable loots[];
 
 static inline Tile getTile(int x, int y)
 {
-	int tileWanted = y * game.WORLD_WIDTH + x;
-	if(game.HWMODE == MODE_RAM)
-	{
-		return world.tiles[tileWanted];
+	if((unsigned)x >= (unsigned)game.WORLD_WIDTH ||
+	   (unsigned)y >= (unsigned)game.WORLD_HEIGHT) return (Tile){TILE_STONE};
+	int offset = y * game.WORLD_WIDTH + x;
+	Tile tile;
+	if(game.HWMODE == MODE_RAM) tile = world.tiles[offset];
+	else {
+		tilePun word;
+		word.aligned = *(volatile uint32_t *)((unsigned char *)save.tileData + (offset & ~3));
+		tile = word.tiles[offset & 3];
 	}
-	else
-	{
-		group.aligned = *(uint32_t *)(save.tileData + (tileWanted & ~3));
-		return group.tiles[tileWanted & 3];
-	}
+	return tile.id < TILES_COUNT ? tile : (Tile){TILE_STONE};
 }
 
 static inline void setTile(int x, int y, enum Tiles tile)
 {
-	int tileWanted = y * game.WORLD_WIDTH + x;
-	uint32_t *nearest;
-
-	if(game.HWMODE == MODE_RAM)
-	{
-		world.tiles[tileWanted] = (Tile){tile};
-		return;
+	if((unsigned)x >= (unsigned)game.WORLD_WIDTH ||
+	   (unsigned)y >= (unsigned)game.WORLD_HEIGHT ||
+	   (unsigned)tile >= TILES_COUNT) return;
+	int offset = y * game.WORLD_WIDTH + x;
+	if(game.HWMODE == MODE_RAM) world.tiles[offset] = (Tile){tile};
+	else {
+		volatile uint32_t *address = (volatile uint32_t *)((unsigned char *)save.tileData + (offset & ~3));
+		tilePun word;
+		word.aligned = *address;
+		word.tiles[offset & 3] = (Tile){tile};
+		*address = word.aligned;
 	}
-	else
-	{
-		nearest = save.tileData + (tileWanted & ~3);
-		group.aligned = *nearest;
-		group.tiles[tileWanted & 3] = (Tile){tile};
-		*nearest = group.aligned;
-		return;
-	}
+	/* Includes sand, grass, and multi-tile objects across region boundaries. */
+	save.regionData[(y / REGION_SIZE) * save.regionsX + x / REGION_SIZE] = 1;
 }
 
 /* regionChange

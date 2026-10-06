@@ -89,9 +89,11 @@ void addNPC(enum NPCs id)
 	NPC *npc;
 	int tileX, tileY = 0;
 
+	if(id <= NPC_NONE || id > NPC_NURSE || world.numNPCs >= MAX_NPCS || isNPCAlive(id)) return;
+	NPC *resized = realloc(world.npcs, (world.numNPCs + 1) * sizeof(NPC));
+	allocCheck(resized);
+	world.npcs = resized;
 	world.numNPCs++;
-	world.npcs = realloc(world.npcs, world.numNPCs * sizeof(NPC));
-	allocCheck(world.npcs);
 
 	npc = &world.npcs[world.numNPCs - 1];
 
@@ -140,7 +142,7 @@ void addNPC(enum NPCs id)
 	npc->id = id;
 
 	tileX = game.WORLD_WIDTH >> 1;
-	while(getTile(tileX, tileY).id == TILE_NOTHING) tileY++;
+	while(tileY < game.WORLD_HEIGHT - 1 && getTile(tileX, tileY).id == TILE_NOTHING) tileY++;
 	tileY -= 4;
 	npc->props.x = tileX << 3;
 	npc->props.y = tileY << 3;
@@ -304,7 +306,7 @@ bool npcTalk(int numDialogue, char **dialogue, enum MenuTypes type)
 	for(int line = 0; line < lines; line++)
 	{
 		strncpy(buffer, (char *)(dialogue[selectedLine] + 32 * line), 32);
-		dprint(2, line * 7 + 2, C_BLACK, buffer);
+		dtext(2, line * 7 + 2, C_BLACK, buffer);
 	}
 
 	switch(type)
@@ -337,11 +339,6 @@ bool npcTalk(int numDialogue, char **dialogue, enum MenuTypes type)
 			case KEY_F2:
 				return false;
 
-			case KEY_OPTN:
-				dupdate();
-				gint_world_switch(GINT_CALL(&takeVRAMCapture));
-				dupdate();
-
 			default:
 				break;
 		}
@@ -371,12 +368,12 @@ bool checkHousingValid(Coords position)
 
 	checkCoords[idx] = position;
 
-	while(checkCoords[idx].x != -1)
+	while(idx <= end)
 	{
 		x = checkCoords[idx].x;
 		y = checkCoords[idx].y;
 
-		if(x < 0 || x >= game.WORLD_WIDTH || y < 0 || y >= game.WORLD_HEIGHT) continue;
+		if(x < 0 || x >= game.WORLD_WIDTH || y < 0 || y >= game.WORLD_HEIGHT) return false;
 
 		for(int i = 0; i < world.numMarkers; i++)
 		{
@@ -439,9 +436,11 @@ bool checkHousingValid(Coords position)
 
 void addMarker(Coords position)
 {
+	if(world.numMarkers >= MAX_HOUSE_MARKERS) return;
+	HouseMarker *resized = realloc(world.markers, (world.numMarkers + 1) * sizeof(HouseMarker));
+	allocCheck(resized);
+	world.markers = resized;
 	world.numMarkers++;
-	world.markers = realloc(world.markers, world.numMarkers * sizeof(HouseMarker));
-	allocCheck(world.markers);
 	world.markers[world.numMarkers - 1] = (HouseMarker) {
 		.position = position,
 		.occupant = -1
@@ -450,16 +449,15 @@ void addMarker(Coords position)
 
 bool removeMarker(int idx)
 {
-	HouseMarker *marker = &world.markers[idx];
-
 	if(idx < 0 || idx >= world.numMarkers) return false;
+	HouseMarker *marker = &world.markers[idx];
 
 	if(marker->occupant != -1) world.npcs[marker->occupant].marker = -1;
 	*marker = world.markers[world.numMarkers - 1];
 	if(marker->occupant != -1) world.npcs[marker->occupant].marker = idx;
 	world.numMarkers--;
-	world.markers = realloc(world.markers, world.numMarkers * sizeof(HouseMarker));
-	if(world.numMarkers > 0) allocCheck(world.markers);
+	if(world.numMarkers == 0) { free(world.markers); world.markers = NULL; }
+	/* Keep bounded capacity on removal, avoiding realloc churn. */
 
 	return true;
 }
