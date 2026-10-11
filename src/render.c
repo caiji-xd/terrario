@@ -478,6 +478,7 @@ void setVar(int x, int y)
 		
 		case TILE_FURNACE_EDGE:
 			if(x == game.WORLD_WIDTH - 1 || getTile(x + 1 , y).id != TILE_FURNACE_MID) var += 2;
+			goto vertical_variant;
 		case TILE_BED_EDGE:
 			if(x == game.WORLD_WIDTH - 1 || getTile(x + 1 , y).id != TILE_BED_MID) var += 2;
 		case TILE_CHAIR_L:
@@ -503,6 +504,7 @@ void setVar(int x, int y)
 		case TILE_LOOM_L:
 		case TILE_DOOR_O_L_L: case TILE_DOOR_O_L_R:
 		case TILE_DOOR_O_R_L: case TILE_DOOR_O_R_R:
+		vertical_variant:
 		while(y - dY - 1 >= 0 && getTile(x, y - dY - 1).id == tile.id) dY++;
 		var += dY;
 		varBuffer[virtY][virtX] = var;
