@@ -1,5 +1,14 @@
 /build
 build-fx
+build-cg
+*.g3a
+*.elf
+*.bin
+*.o
+*.d
+*.su
+*.log
+original-source-backup.zip
 .vscode
 *.g1a
 *.code-workspace
