@@ -580,6 +580,8 @@ void registerGhost()
 			break;
 		
 		case ITEM_CHEST:
+		case ITEM_SAWMILL:
+		case ITEM_LOOM:
 			player.ghost = (struct GhostObject){2, 2};
 			break;
 		
