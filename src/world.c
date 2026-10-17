@@ -777,6 +777,7 @@ void addLoot(struct Chest *chest, enum LootTables table)
 		if(rand() % currLoot->ratioHigh >= currLoot->ratioLow - 1)
 		{
 			amount = (rand() % (currLoot->amountMax - currLoot->amountMin + 1)) + currLoot->amountMin;
+			if(amount == 0) continue;
 			item = currLoot->items[rand() % currLoot->num];
 			chest->items[slot] = (Item){item, rand() % PREFIX_COUNT, amount};
 			slot++;
