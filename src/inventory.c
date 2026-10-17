@@ -309,7 +309,7 @@ void inventoryMenu(struct Chest* chest)
 				if(item->id == ITEM_NULL) dsubimage(113, slot * 17 + 2, &img_ui_placeholders, slot * 15 + 1, 1, 14, 13, DIMAGE_NOCLIP);
 				else renderItem(113, slot * 17 + 1, item);
 			}
-			dprint_opt(112, 0, C_BLACK, C_WHITE, DTEXT_RIGHT, DTEXT_TOP, "%i DEF", player.combat.defense + player.bonuses.defense);
+			dprint_opt(112, 0, C_BLACK, C_WHITE, DTEXT_RIGHT, DTEXT_TOP, "%i DEF", (int)(player.combat.defense + player.bonuses.defense));
 		}
 		else
 		{
