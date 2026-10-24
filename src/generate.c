@@ -7,7 +7,7 @@
 #include "world.h"
 #include "chest.h"
 
-#define NUM_WORLD_GEN_PARTS 28
+#define NUM_WORLD_GEN_PARTS 29
 #define WORLD_SMOOTH_PASSES 5
 
 GYRAM unsigned char yPositions[1000];
@@ -173,6 +173,43 @@ void parabola(int x, int y, int width, int depth, enum Tiles material)
 		{
 			setTile(x + dX, y + dY, material);
 		}
+	}
+}
+
+/* sealMaterial
+Picks a natural-looking material for a water-sealing plug, based on what the plug
+sits under. Never returns sand, which would fall away and re-open the leak.
+
+x, y: Coordinates of the tile the plug goes directly below.
+
+Returns the tile to place.
+*/
+static enum Tiles sealMaterial(int x, int y)
+{
+	switch(getTile(x, y).id)
+	{
+		case TILE_DIRT:
+		case TILE_GRASS:
+		case TILE_GRASS_JUNGLE:
+		case TILE_MUD:
+		case TILE_CLAY:
+		case TILE_SAND:
+			return TILE_DIRT;
+
+		case TILE_STONE:
+		case TILE_IRON_ORE:
+		case TILE_COPPER_ORE:
+		case TILE_TIN_ORE:
+		case TILE_AMETHYST:
+		case TILE_DIAMOND:
+		case TILE_EMERALD:
+		case TILE_RUBY:
+		case TILE_SAPPHIRE:
+		case TILE_TOPAZ:
+			return TILE_STONE;
+
+		default:
+			return (rand() % 3) ? TILE_DIRT : TILE_STONE;
 	}
 }
 
@@ -835,6 +872,39 @@ void generateWorld()
 			{
 				for(int dY = 1; dY < randRange(3, 11) && getTile(x, y + dY).id == TILE_NOTHING; dY++) setTile(x, y + dY, TILE_VINE);
 			}
+		}
+	}
+
+//	Sealing Water
+//	Caves are carved before lakes are placed, so a body of water can end up sitting
+//	directly above a cave void and drain away for good. Water can only move down,
+//	down-diagonally or sideways, so plugging those neighbours with a non-floodable
+//	tile keeps the body intact until the player digs it open. Only the surface half
+//	of the world is handled, which is where lakes, oceans and the shallow caves are.
+	middleText("Sealing Water", updateProgress());
+	for(int y = 0; y < game.WORLD_HEIGHT / 2; y++)
+	{
+		for(int x = 0; x < game.WORLD_WIDTH; x++)
+		{
+			if(getTile(x, y).id != TILE_WATER) continue;
+//			Down, down-left and down-right. Sand still settles later, so look past it
+			for(int dX = -1; dX <= 1; dX++)
+			{
+				int checkX = x + dX;
+				if((unsigned)checkX >= (unsigned)game.WORLD_WIDTH) continue;
+				for(int dY = y + 1; dY < min(y + 5, game.WORLD_HEIGHT); dY++)
+				{
+					Tile check = getTile(checkX, dY);
+//					Still inside the body, its own water tiles handle this column
+					if(check.id == TILE_WATER) break;
+					if(tiles[check.id].physics == PHYS_SAND) continue;
+					if(tiles[check.id].canFlood) setTile(checkX, dY, sealMaterial(checkX, dY - 1));
+					break;
+				}
+			}
+//			Same-row leaks, i.e. a cave mouth flush with the water surface
+			if(x > 0 && tiles[getTile(x - 1, y).id].canFlood) setTile(x - 1, y, sealMaterial(x - 1, y - 1));
+			if(x + 1 < game.WORLD_WIDTH && tiles[getTile(x + 1, y).id].canFlood) setTile(x + 1, y, sealMaterial(x + 1, y - 1));
 		}
 	}
 }
