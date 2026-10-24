@@ -344,7 +344,7 @@ void render(bool renderHUD)
 			prefix = item.prefix;
 		}
 
-		if(player.cursor.x < 82 && player.cursor.y < 19)
+		if(player.cursor.x < 82 && player.cursor.y < 25)
 		{
 			hotbarY = 47;
 			if(item.id != ITEM_NULL) dprint_opt(0, 47, C_BLACK, C_WHITE, DTEXT_LEFT, DTEXT_BOTTOM, "%s%s", prefixes[prefix].name, items[item.id].name);
