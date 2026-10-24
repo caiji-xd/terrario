@@ -25,6 +25,17 @@ enum SupportTypes {
 	SUPPORT_TOP
 };
 
+/*
+Material groups, used for rendering only. Tiles in the same group always connect,
+whichever of the two is being drawn, so a seam between them vanishes from both
+sides. MAT_NONE opts a tile out of material blending entirely.
+*/
+enum Materials {
+	MAT_NONE,
+	MAT_SOIL,
+	MAT_COUNT
+};
+
 /* I want to keep as much data as I can in here
 and not the Tile struct */
 typedef struct {
@@ -42,6 +53,7 @@ typedef struct {
 	bool compress;
 	float hitpoints;
 	bool canFlood;
+	unsigned char material;
 } TileData;
 
 extern const TileData tiles[];
@@ -245,6 +257,16 @@ x, y: Coordinates of a tile within the world.
 Returns the state of the tile.
 */
 unsigned char findState(int x, int y);
+
+/* findRenderState
+Like findState, except that any two tiles of the same material group connect.
+Used by the renderer only, so gameplay (grass spreading) keeps the old rules.
+
+x, y: Coordinates of a tile within the world.
+
+Returns the state of the tile.
+*/
+unsigned char findRenderState(int x, int y);
 
 /* placeTile
 Places the corresponding tile of an item. Decreases the amount of the item if

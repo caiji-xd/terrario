@@ -199,7 +199,7 @@ void render(bool renderHUD)
 					subrectY = 0;
 					if(currTile->spriteType == TYPE_SHEET || currTile->spriteType == TYPE_SHEET_VAR)
 					{
-						state = findState(x, y);
+						state = findRenderState(x, y);
 //						Spritesheet layout allows for very fast calculation of the position of the sprite
 						subrectX = ((state & 3) << 3) + (state & 3) + 1;
 						subrectY = ((state >> 2) << 3) + (state >> 2) + 1;
