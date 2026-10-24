@@ -122,10 +122,13 @@ void useHeld()
 		player.inventory.ticksSinceInteracted = 0;
 		x = player.cursorTile.x;
 		y = player.cursorTile.y;
-		validLeft = x < player.props.x >> 3;
-		validRight = x > (player.props.x + player.props.width) >> 3;
-		validTop = y < player.props.y >> 3;
-		validBottom = y > (player.props.y + player.props.height) >> 3;
+//		Use the exact tile span the player's box covers. (pos + size) >> 3 rounds
+//		up, so a standing player (bottom edge sitting on a tile boundary) had the
+//		tile underneath its feet counted as part of its own box.
+		validLeft = x < (player.props.x >> 3);
+		validRight = x > ((player.props.x + player.props.width - 1) >> 3);
+		validTop = y < (player.props.y >> 3);
+		validBottom = y > ((player.props.y + player.props.height - 1) >> 3);
 //		Disable placing if tile above keeps the tile below
 		validSupport = y > 0 && tiles[getTile(x, y - 1).id].support != SUPPORT_KEEP;
 		item = player.inventory.getSelected();
