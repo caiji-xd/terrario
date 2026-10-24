@@ -30,7 +30,7 @@ extern struct GameCompatibilityPresets game;
 #define allocCheck(x) if((x) == NULL) memoryErrorMenu()
 
 #ifndef DEBUGMODE
-#define VERSION "v0.10.0-safe1"
+#define VERSION "v0.10.1"
 #else
 #define VERSION "DEBUG BUILD!"
 #endif
