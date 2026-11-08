@@ -40,7 +40,8 @@ enum Salts {
 	SALT_CHEESE, SALT_CHEESE2, SALT_SPAG, SALT_SPAGW, SALT_NOODLE, SALT_TOGGLE,
 	SALT_JUNGLE, SALT_WORM, SALT_WORM2, SALT_LAKE, SALT_MINE, SALT_CABIN,
 	SALT_HOUSE, SALT_ORE, SALT_GEM, SALT_WEB, SALT_POT, SALT_CRYST, SALT_TREE,
-	SALT_CACTUS, SALT_PLANT, SALT_VINE, SALT_TORCH, SALT_JPLANT
+	SALT_CACTUS, SALT_PLANT, SALT_VINE, SALT_TORCH, SALT_JPLANT,
+	SALT_DIRT_BAND
 };
 
 static uint32_t worldSeed;
@@ -1114,18 +1115,37 @@ typedef struct {
 	int16_t minY, maxY;	// Absolute rows
 	uint8_t minSize, maxSize;
 	bool triangle;			// Triangular height distribution, peak in the middle
+	uint8_t mode;			// Which tiles a blob may replace, see ORE_ON_*
+	uint8_t shape;			// Walk style, see SHAPE_*
 } OreFeature;
 
+//	Blob replacement rules
+#define ORE_ON_STONE 0	// Stone only, clay keeps its historical exception
+#define ORE_ON_SOIL  1	// Dirt, mud and clay: the soil patches of the finite-world maps
+
+//	Blob shapes. A vein is a plain random walk (thin, stringy). A blob keeps
+//	jumping back towards its origin, so it fills a compact lump instead of
+//	leaving a single thread, which is what the old clump() maps looked like.
+#define SHAPE_VEIN 0
+#define SHAPE_BLOB 1
+
 static const OreFeature ores[] = {
-	{TILE_DIRT,			5,	4,		400,	10, 22, false},
-	{TILE_CLAY,			2,	-20,	60,		6,	12, false},
-	{TILE_COPPER_ORE,	5,	-10,	120,	4,	9,	true},
-	{TILE_TIN_ORE,		4,	10,		180,	4,	9,	true},
-	{TILE_IRON_ORE,		4,	30,		32000,	4,	10, false},
+	{TILE_DIRT,			6,	4,		400,	20, 44, false, ORE_ON_STONE, SHAPE_BLOB},
+	{TILE_CLAY,			2,	-20,	60,		6,	12, false, ORE_ON_STONE, SHAPE_VEIN},
+	{TILE_COPPER_ORE,	5,	-10,	120,	4,	9,	true,  ORE_ON_STONE, SHAPE_VEIN},
+	{TILE_TIN_ORE,		4,	10,		180,	4,	9,	true,  ORE_ON_STONE, SHAPE_VEIN},
+	{TILE_IRON_ORE,		4,	30,		32000,	4,	10, false, ORE_ON_STONE, SHAPE_VEIN},
+
+/*	Appended after the five original entries on purpose: a feature's salt is
+	SALT_ORE + k * 0x1000, k being its index, so inserting or reordering would
+	change the ore layout of every world that already exists. */
+	{TILE_DIRT,			4,	350,	8192,	24, 50, false, ORE_ON_STONE, SHAPE_BLOB},	// Dirt far below the old 400 row cutoff
+	{TILE_STONE,		5,	-20,	200,	12, 28, false, ORE_ON_SOIL,  SHAPE_BLOB},	// Rocks in dirt
 };
 
-static inline bool oreReplaces(uint8_t ore, uint8_t t)
+static inline bool oreReplaces(uint8_t ore, uint8_t t, uint8_t mode)
 {
+	if(mode == ORE_ON_SOIL) return t == TILE_DIRT || t == TILE_MUD || t == TILE_CLAY;
 	if(ore == TILE_CLAY) return t == TILE_STONE || t == TILE_DIRT || t == TILE_SAND;
 	return t == TILE_STONE;
 }
@@ -1151,6 +1171,7 @@ static void drawOres(int cx, int cy)
 					int32_t y = scy * CS + rngInt(&r, CS);
 					int size = rngRange(&r, ore->minSize, ore->maxSize);
 					uint32_t roll = rngNext(&r);
+					int32_t ox = x, oy = y;
 
 					if(y < ore->minY || y > ore->maxY) continue;
 					if(ore->triangle)
@@ -1162,13 +1183,58 @@ static void drawOres(int cx, int cy)
 					for(int i = 0; i < size; i++)
 					{
 						const int8_t *st;
-						if(inChunk(x, y) && oreReplaces(ore->tile, getT(x, y))) setT(x, y, ore->tile);
+						if(inChunk(x, y) && oreReplaces(ore->tile, getT(x, y), ore->mode)) setT(x, y, ore->tile);
+//						A blob keeps falling back to its origin, so it fills a lump
+						if(ore->shape == SHAPE_BLOB && !(rngNext(&r) & 3)) { x = ox; y = oy; }
 						st = steps[rngInt(&r, 8)];
 						x += st[0];
 						y += st[1];
 					}
 				}
 			}
+		}
+	}
+}
+
+//---
+// Dirt streaks
+//---
+
+/*
+The old finite-world maps had horizontal dirt seams running through the stone,
+and they are a big part of why a cross-section reads as "the classic map"
+instead of an endless quarry. Every DIRT_BAND_PERIOD rows there is a seam that
+wobbles up and down with 1D noise and varies in thickness, so the seams are not
+perfectly straight.
+
+Only TILE_STONE is replaced, so caves and structures survive, and the seam is
+skipped for the first DIRT_BAND_DEPTH rows under the surface to keep the grass
+line and the soil band clean.
+*/
+#define DIRT_BAND_PERIOD 32
+#define DIRT_BAND_DEPTH 14
+
+static void drawDirtBands(void)
+{
+	for(int x = 0; x < CS; x++)
+	{
+		int32_t gx = chunkX0 + x;
+		const Column *col = colAt(gx);
+		int wobble = (vnoise1(gx, 5, SALT_DIRT_BAND) >> 9) - 4;	// -4..3 rows
+		int thickness = 1 + (vnoise1(gx, 6, SALT_DIRT_BAND + 1) >> 10);	// 1..4 rows
+
+//		Seams fade in and out over a few chunks, so they read as broken strata
+		if(vnoise1(gx, 7, SALT_DIRT_BAND + 2) < 1600) continue;
+
+		for(int y = 0; y < CS; y++)
+		{
+			int32_t gy = chunkY0 + y;
+			int phase;
+
+			if(gy - col->surf < DIRT_BAND_DEPTH) continue;
+			phase = (gy + wobble) & (DIRT_BAND_PERIOD - 1);
+			if(phase >= thickness) continue;
+			if(getT(gx, gy) == TILE_STONE) setT(gx, gy, TILE_DIRT);
 		}
 	}
 }
@@ -1410,7 +1476,7 @@ static void buildColumns(void)
 		col->biome = biome;
 		col->flags = surf <= SEA_LEVEL ? COL_DRY : 0;
 		col->jungle = surf <= SEA_LEVEL ? clampQ11(imin(cl.t - 250, cl.h - 450) * 2) : -2048;
-		col->dirtDepth = 3 + (vnoise1(gx, 3, SALT_DIRT) >> 10);
+		col->dirtDepth = 4 + (fbm1(gx, 4, 2, SALT_DIRT) >> 8);	// 4..19 rows of soil
 	}
 
 	for(int i = 0; i < NUM_COLS; i++)
@@ -1583,13 +1649,14 @@ void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride)
 
 	if(underground)
 	{
-//		7. Ores
+//		8. Dirt seams and ores
+		drawDirtBands();
 		drawOres(cx, cy);
-//		8. Underground decoration
+//		9. Underground decoration
 		drawUndergroundDecoration();
 	}
 
-//	9. Vegetation
+//	10. Vegetation
 	drawVegetation();
 }
 
