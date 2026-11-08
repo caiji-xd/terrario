@@ -18,6 +18,7 @@
 #include "chat.h"
 
 Coords varBufferPos = {0, 0};
+int viewShift = 3;
 
 /*
 For right-facing player
@@ -61,10 +62,18 @@ void renderChat()
 
 void render(bool renderHUD)
 {
-	unsigned int camMinX = (VAR_BUF_OFFSET << 3) + (SCREEN_WIDTH >> 1);
-	unsigned int camMaxX = ((game.WORLD_WIDTH - VAR_BUF_OFFSET) << 3) - (SCREEN_WIDTH >> 1);
-	unsigned int camMinY = (VAR_BUF_OFFSET << 3) + (SCREEN_HEIGHT >> 1);
-	unsigned int camMaxY = ((game.WORLD_HEIGHT - VAR_BUF_OFFSET) << 3) - (SCREEN_HEIGHT >> 1);
+//	View scale: scrShift is how many world pixels a screen pixel covers, tilePx
+//	is the size a tile is drawn at, and crop picks the middle of each sprite when
+//	a tile has to be squeezed into half its size.
+	int scrShift = 3 - viewShift;
+	int tilePx = 1 << viewShift;
+	int crop = viewShift == 3 ? 0 : 2;
+	int viewW = SCREEN_WIDTH << scrShift;
+	int viewH = SCREEN_HEIGHT << scrShift;
+	unsigned int camMinX = (VAR_BUF_OFFSET << 3) + (viewW >> 1);
+	unsigned int camMaxX = ((game.WORLD_WIDTH - VAR_BUF_OFFSET) << 3) - (viewW >> 1);
+	unsigned int camMinY = (VAR_BUF_OFFSET << 3) + (viewH >> 1);
+	unsigned int camMaxY = ((game.WORLD_HEIGHT - VAR_BUF_OFFSET) << 3) - (viewH >> 1);
 	extern bopti_image_t img_player, img_ui_cursor, img_ui_slots, img_ui_slot_highlight,
 	img_leaves, img_ui_deathtext, img_bg_underground, img_sunmoon, img_bg_night,
 	img_tiles_cracks, img_tiles_ghost, img_ui_bubble, img_ui_banners;
@@ -73,16 +82,16 @@ void render(bool renderHUD)
 	int camY = min(max(player.props.y + (player.props.height >> 1), camMinY), camMaxY);
 
 //	Translating cam bounds to tile bounds is painful
-	unsigned int tileLeftX = max(0, ((camX - (SCREEN_WIDTH >> 1)) >> 3));
-	unsigned int tileRightX = min(game.WORLD_WIDTH - 1, tileLeftX + (SCREEN_WIDTH >> 3));
-	unsigned int tileTopY = max(0, ((camY - (SCREEN_HEIGHT >> 1)) >> 3));
-	unsigned int tileBottomY = min(game.WORLD_HEIGHT - 1, tileTopY + (SCREEN_HEIGHT >> 3));
+	unsigned int tileLeftX = max(0, ((camX - (viewW >> 1)) >> 3));
+	unsigned int tileRightX = min(game.WORLD_WIDTH - 1, ((camX + (viewW >> 1)) >> 3));
+	unsigned int tileTopY = max(0, ((camY - (viewH >> 1)) >> 3));
+	unsigned int tileBottomY = min(game.WORLD_HEIGHT - 1, ((camY + (viewH >> 1)) >> 3));
 
 	Tile tile;
 	const TileData *currTile;
-	unsigned int currTileX, currTileY;
-	int camOffsetX = (camX - (SCREEN_WIDTH >> 1));
-	int camOffsetY = (camY - (SCREEN_HEIGHT >> 1));
+	int currTileX, currTileY;
+	int camOffsetX = (camX - (viewW >> 1));
+	int camOffsetY = (camY - (viewH >> 1));
 	bool marginLeft, marginRight, marginTop, marginBottom;
 	int flags;
 	int state;
@@ -111,8 +120,8 @@ void render(bool renderHUD)
 
 	Particle particle;
 
-	player.cursorWorld.x = camX + player.cursor.x - (SCREEN_WIDTH >> 1);
-	player.cursorWorld.y = camY + player.cursor.y - (SCREEN_HEIGHT >> 1);
+	player.cursorWorld.x = camX + ((player.cursor.x - (SCREEN_WIDTH >> 1)) << scrShift);
+	player.cursorWorld.y = camY + ((player.cursor.y - (SCREEN_HEIGHT >> 1)) << scrShift);
 
 	player.cursorTile.x = player.cursorWorld.x >> 3;
 	player.cursorTile.y = player.cursorWorld.y >> 3;
@@ -146,10 +155,12 @@ void render(bool renderHUD)
 		{
 			if(getTile(x, y).id == TILE_LEAVES)
 			{
-				currTileX = (x << 3) - camOffsetX;
-				currTileY = (y << 3) - camOffsetY;
+				currTileX = ((x << 3) - camOffsetX) >> scrShift;
+				currTileY = ((y << 3) - camOffsetY) >> scrShift;
 				var = varBuffer[y - varBufferPos.y][x - varBufferPos.x];
-				dsubimage(currTileX - 16, currTileY - 32, &img_leaves, 41 * var + 1, 0, 40, 40, DIMAGE_NONE);
+//				The canopy is 40x40; when zoomed out only its middle 20x20 is kept
+				dsubimage(currTileX - (16 >> scrShift), currTileY - (32 >> scrShift), &img_leaves,
+					41 * var + 1 + (crop ? 10 : 0), crop ? 10 : 0, 40 >> scrShift, 40 >> scrShift, DIMAGE_NONE);
 				continue;
 			}
 		}
@@ -159,8 +170,8 @@ void render(bool renderHUD)
 	for(int i = 0; i < world.numMarkers; i++)
 	{
 		marker = &world.markers[i];
-		x = (marker->position.x << 3) - camOffsetX;
-		y = (marker->position.y << 3) - camOffsetY;
+		x = ((marker->position.x << 3) - camOffsetX) >> scrShift;
+		y = ((marker->position.y << 3) - camOffsetY) >> scrShift;
 		dsubimage(x, y, &img_ui_banners, 0, 0, 16, 20, DIMAGE_NONE);
 //		14px x 14px max
 		if(marker->occupant != -1) dimage(x + 1, y + 4, world.npcs[marker->occupant].head);
@@ -174,8 +185,8 @@ void render(bool renderHUD)
 		{
 			tile = getTile(x, y);
 			currTile = &tiles[tile.id];
-			currTileX = (x << 3) - camOffsetX;
-			currTileY = (y << 3) - camOffsetY;
+			currTileX = ((x << 3) - camOffsetX) >> scrShift;
+			currTileY = ((y << 3) - camOffsetY) >> scrShift;
 			if(currTile->render)
 			{
 				/* Disable clipping unless it's a block on the edges of the screen.
@@ -207,11 +218,11 @@ void render(bool renderHUD)
 					var = varBuffer[y - varBufferPos.y][x - varBufferPos.x];
 					if(currTile->spriteType == TYPE_TILE_VAR) subrectX = 9 * var + 1;
 					if(currTile->spriteType == TYPE_SHEET_VAR) subrectX += 37 * var;
-					dsubimage(currTileX, currTileY, currTile->sprite, subrectX, subrectY, 8, 8, flags);
+					dsubimage(currTileX, currTileY, currTile->sprite, subrectX + crop, subrectY + crop, tilePx, tilePx, flags);
 				}
 				else
 				{
-					dsubimage(currTileX, currTileY, currTile->sprite, 0, 0, 8, 8, flags);
+					dsubimage(currTileX, currTileY, currTile->sprite, crop, crop, tilePx, tilePx, flags);
 				}
 			}
 		}
@@ -237,7 +248,7 @@ void render(bool renderHUD)
 			}
 			subrectX = ((state & 3) << 3) + (state & 3) + 1;
 			subrectY = ((state >> 2) << 3) + (state >> 2) + 1;
-			dsubimage(((player.cursorTile.x + dX) << 3) - camOffsetX, ((player.cursorTile.y + dY) << 3) - camOffsetY, &img_tiles_ghost, subrectX, subrectY, 8, 8, DIMAGE_NONE);
+			dsubimage((((player.cursorTile.x + dX) << 3) - camOffsetX) >> scrShift, (((player.cursorTile.y + dY) << 3) - camOffsetY) >> scrShift, &img_tiles_ghost, subrectX + crop, subrectY + crop, tilePx, tilePx, DIMAGE_NONE);
 		}
 	}
 
@@ -248,11 +259,11 @@ void render(bool renderHUD)
 		subrectX = heldPickData->targeted.crackVar * 9 + 1;
 		subrectY = (int)(4.0 / 100.0 * heldPickData->targeted.damage) * 9 + 1;
 		dsubimage(
-			(heldPickData->targeted.x << 3) - camOffsetX, 
-			(heldPickData->targeted.y << 3) - camOffsetY, 
-			&img_tiles_cracks, 
-			subrectX, subrectY, 
-			8, 8, 
+			((heldPickData->targeted.x << 3) - camOffsetX) >> scrShift,
+			((heldPickData->targeted.y << 3) - camOffsetY) >> scrShift,
+			&img_tiles_cracks,
+			subrectX + crop, subrectY + crop,
+			tilePx, tilePx,
 			DIMAGE_NONE
 			);
 	}
@@ -264,8 +275,8 @@ void render(bool renderHUD)
 		{
 			ent = &world.entities[idx];
 
-			entX = ent->props.x - (camX - (SCREEN_WIDTH >> 1));
-			entY = ent->props.y - (camY - (SCREEN_HEIGHT >> 1));
+			entX = (ent->props.x - camOffsetX) >> scrShift;
+			entY = (ent->props.y - camOffsetY) >> scrShift;
 			entSubrectX = ent->anim.direction * (ent->props.width + 2 * ent->spriteOffset);
 			entSubrectY = ent->anim.animationFrame * (ent->props.height + 1) + 1;
 			dsubimage(entX - ent->spriteOffset, entY, ent->sprite, entSubrectX, entSubrectY, ent->props.width + 2 * ent->spriteOffset, ent->props.height, DIMAGE_NONE);
@@ -276,8 +287,8 @@ void render(bool renderHUD)
 	{
 		npc = &world.npcs[idx];
 		
-		entX = npc->props.x - (camX - (SCREEN_WIDTH >> 1));
-		entY = npc->props.y - (camY - (SCREEN_HEIGHT >> 1));
+		entX = (npc->props.x - camOffsetX) >> scrShift;
+		entY = (npc->props.y - camOffsetY) >> scrShift;
 		entSubrectX = npc->anim.direction ? npc->props.width : 0;
 //		NPCs and player have a sticky out bit at the bottom that isn't included in their height,
 //		so add 2 instead of 1 when finding the subrectangle Y
@@ -288,8 +299,8 @@ void render(bool renderHUD)
 //	Only render player if the player isn't flashing or dead
 	if(!(player.combat.currImmuneFrames & 2) && player.combat.health > 0)
 	{
-		entX = player.props.x - (camX - (SCREEN_WIDTH >> 1)) - 2;
-		entY = player.props.y - (camY - (SCREEN_HEIGHT >> 1));
+		entX = ((player.props.x - camOffsetX) >> scrShift) - 2;
+		entY = (player.props.y - camOffsetY) >> scrShift;
 		entSubrectY = player.anim.animationFrame * (player.props.height + 2) + 1;
 		if(player.swingFrame == 0)
 		{
@@ -329,7 +340,7 @@ void render(bool renderHUD)
 	for(int i = 0; i < world.explosion.numParticles; i++)
 	{
 		particle = world.explosion.particles[i];
-		dpixel(particle.x - (camX - (SCREEN_WIDTH >> 1)), particle.y - (camY - (SCREEN_HEIGHT >> 1)), particle.colour);
+		dpixel(((int)particle.x - camOffsetX) >> scrShift, ((int)particle.y - camOffsetY) >> scrShift, particle.colour);
 	}
 
 //	Render the hotbar if the player has recently interacted with their inventory
@@ -370,8 +381,8 @@ void render(bool renderHUD)
 	{
 		for(int bubble = 0; bubble < player.breath / 40 + 1; bubble++)
 		{
-			x = player.props.x - (camX - (SCREEN_WIDTH >> 1)) - 9 + bubble * 6;
-			y = player.props.y - (camY - (SCREEN_HEIGHT >> 1)) - 6;
+			x = ((player.props.x - camOffsetX) >> scrShift) - 9 + bubble * 6;
+			y = ((player.props.y - camOffsetY) >> scrShift) - 6;
 			dimage(x, y, &img_ui_bubble);
 		}
 	}

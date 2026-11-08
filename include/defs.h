@@ -35,7 +35,7 @@ extern struct GameCompatibilityPresets game;
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-#define VAR_BUF_WIDTH 28
+#define VAR_BUF_WIDTH 40	/* covers the 32 tile wide zoomed out view */
 #define VAR_BUF_HEIGHT 20
 #define VAR_BUF_OFFSET 5
 

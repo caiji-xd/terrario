@@ -181,6 +181,15 @@ enum UpdateReturnCodes keyboardUpdate()
 				}
 				registerHeld();
 				break;
+			case KEY_ADD:
+//				Zoom out: 32x16 tiles at once
+				if(key.type == KEYEV_DOWN) viewShift = 2;
+				break;
+			case KEY_SUB:
+//				Back to the normal 16x8 view
+				if(key.type == KEYEV_DOWN) viewShift = 3;
+				break;
+
 			case KEY_ALPHA:
 				player.inventory.ticksSinceInteracted = 0;
 				if(key.type != KEYEV_DOWN || playerDead) break;

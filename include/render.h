@@ -32,6 +32,11 @@ struct ParticleExplosion {
 
 extern char varBuffer[VAR_BUF_HEIGHT][VAR_BUF_WIDTH];
 
+/*	View scale, in bits: 3 draws tiles 8 pixels wide, which fits 16x8 tiles on
+	the screen; 2 halves it so 32x16 tiles are visible at once. Physics and all
+	world coordinates stay in the 8-pixel grid, this only affects rendering. */
+extern int viewShift;
+
 extern Coords varBufferPos;
 
 /* render
