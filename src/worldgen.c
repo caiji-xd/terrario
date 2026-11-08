@@ -565,6 +565,26 @@ static inline void carve(int32_t gx, int32_t gy)
 	if(t != TILE_WATER) setT(gx, gy, TILE_NOTHING);
 }
 
+/* Carves a tile, allowing it to reach the surface. Only the cave mouths use
+   openSky; water is never touched, and sandy biomes keep their sand roof
+   because it would fall in. */
+static inline void carveShallow(int32_t gx, int32_t gy, bool openSky)
+{
+	Column *col;
+	uint8_t t;
+	int d;
+
+	if(!inChunk(gx, gy)) return;
+	col = colAt(gx);
+	d = gy - col->surf;
+	if(d < 0 || gy < col->protectY) return;
+	if(d < (openSky ? sandRoof(col) : imax(1, sandRoof(col)))) return;
+	t = getT(gx, gy);
+	if(t == TILE_WATER) return;
+	if(!openSky && (t == TILE_GRASS || t == TILE_GRASS_JUNGLE)) return;
+	setT(gx, gy, TILE_NOTHING);
+}
+
 //---
 // Caves
 //---
@@ -573,7 +593,7 @@ static void caveFields(int32_t gx, int32_t gy, int16_t *f)
 {
 	int32_t sy = gy + (gy >> 1);	// Squash vertically: caves run sideways
 
-	f[0] = (pnoise2(gx, sy, 6, SALT_CHEESE) + (pnoise2(gx, sy, 5, SALT_CHEESE2) >> 1));
+	f[0] = (pnoise2(gx, sy, 5, SALT_CHEESE) + (pnoise2(gx, sy, 4, SALT_CHEESE2) >> 1));
 	f[1] = pnoise2(gx, sy, 7, SALT_SPAG);
 	f[2] = pnoise2(gx, gy, 7, SALT_SPAGW);
 	f[3] = pnoise2(gx, sy, 5, SALT_NOODLE);
@@ -596,20 +616,23 @@ static inline int lerpCell(int v00, int v10, int v01, int v11, int fx, int fy)
    - noodle: thin, wiggly tunnels in toggled-on regions. */
 static bool caveTest(const int *f, int depth)
 {
-	if(depth >= 12)
+	if(depth >= 10)
 	{
-		int thr = depth >= 60 ? 1500 : 2600 - (depth - 12) * 1100 / 48;
+		int thr = depth >= 55 ? 1500 : 2600 - (depth - 10) * 1100 / 45;
 		if(f[0] > thr) return true;
 	}
 
-	if(depth >= 5 || (depth >= 0 && f[4] > 1700))
+//	The screen only shows 16x8 tiles, so tunnels are kept narrow: a wide tunnel
+//	eats the whole view. Narrowing them roughly doubles the number of separate
+//	tunnels that fit in the same noise field.
+	if(depth >= 3 || (depth >= 0 && f[4] > 1250))
 	{
-		int w = 110 + ((f[2] * 90) >> 12);
-		if(w < 45) w = 45;
+		int w = 62 + ((f[2] * 46) >> 12);
+		if(w < 34) w = 34;
 		if(iabs(f[1]) < w) return true;
 	}
 
-	if(depth >= 10 && f[4] < -600 && iabs(f[3]) < 150) return true;
+	if(depth >= 6 && f[4] < -300 && iabs(f[3]) < 110) return true;
 
 	return false;
 }
@@ -660,29 +683,38 @@ static void carveWorms(int cx, int cy)
 			Rng r = rngAt(scx, scy, SALT_WORM);
 			int count;
 
-			if(rngInt(&r, 100) >= 12) continue;
-			count = 1 + (rngInt(&r, 3) == 0);
+			if(rngInt(&r, 100) >= 30) continue;
+			count = 1 + (rngInt(&r, 2) == 0) + (rngInt(&r, 4) == 0);
 
 			for(int k = 0; k < count; k++)
 			{
 				Rng w = rngAt(scx * 4 + k, scy, SALT_WORM2);
 				int32_t sx = scx * CS + rngInt(&w, CS);
 				int32_t sy = scy * CS + rngInt(&w, CS);
-				int len = 40 + rngInt(&w, 50);
+				int len = 24 + rngInt(&w, 34);
 				int32_t x8 = sx * 256 + 128, y8 = sy * 256 + 128;
 				int ang = rngInt(&w, 256), angVel = 0;
-				int baseR = 16 + rngInt(&w, 24);	// Q4 tiles
-				int bulge = rngInt(&w, 32);
+				int baseR = 12 + rngInt(&w, 16);	// Q4 tiles
+				int bulge = rngInt(&w, 20);
+				int surfHere = wgSurfaceY(sx);
+				bool mouth = rngInt(&w, 6) == 0;
+
+				if(mouth)
+				{
+					sy = surfHere + 3 + rngInt(&w, 6);
+					y8 = sy * 256 + 128;
+					ang = 176 + rngInt(&w, 32);	// pointing up
+				}
 
 //				Quick reject: the worm can't reach this chunk
 				if(sx + len + 6 < chunkX0 || sx - len - 6 >= chunkX0 + CS
 				|| sy + len + 6 < chunkY0 || sy - len - 6 >= chunkY0 + CS) continue;
-				if(sy < wgSurfaceY(sx) + 10) continue;
+				if(!mouth && sy < surfHere + 10) continue;
 
 //				Sometimes open with a cave room
 				if(rngInt(&w, 4) == 0)
 				{
-					int rx = rngRange(&w, 3, 6), ry = rngRange(&w, 2, 4);
+					int rx = rngRange(&w, 2, 4), ry = rngRange(&w, 2, 3);
 					for(int dy = -ry; dy <= ry; dy++)
 					{
 						for(int dx = -rx; dx <= rx; dx++)
@@ -697,6 +729,29 @@ static void carveWorms(int cx, int cy)
 				{
 					int rad = baseR + ((SIN8(step * 128 / len) * bulge) >> 8);
 					carveDisc(x8 >> 8, y8 >> 8, rad);
+
+//					Where the tunnel runs close under the surface, open a mouth. It
+//					leads straight into the tunnel, so it reads as an entrance
+//					rather than a dent, and carving stops on its own near water.
+					if((step & 3) == 0 && rngInt(&w, 3) == 0)
+					{
+						int32_t mx = x8 >> 8, my = y8 >> 8;
+
+						if(inChunk(mx, my))
+						{
+							Column *mc = colAt(mx);
+							int md = my - mc->surf;
+
+							if(md >= 2 && md <= 9)
+							{
+								for(int32_t gy = mc->surf; gy <= my; gy++)
+								{
+									carveShallow(mx, gy, gy == mc->surf);
+									carveShallow(mx + 1, gy, gy == mc->surf);
+								}
+							}
+						}
+					}
 
 					x8 += COS8(ang);
 					y8 += SIN8(ang) >> 1;
