@@ -450,7 +450,8 @@ int wgChestLoot(int gx, int gy)
 enum ColumnFlags {
 	COL_STONE_TOP = 1,
 	COL_GRASS = 2,		// Surface tile is grass/jungle grass
-	COL_DRY = 4			// Surface is above sea level
+	COL_DRY = 4,		// Surface is above sea level
+	COL_TALL_TREES = 8	// Forest variant with towering trees (high weirdness)
 };
 
 typedef struct {
@@ -1444,14 +1445,18 @@ static bool grassyGround(const Column *col)
 
 static int treeHeight(int32_t gx, const Column *col)
 {
-	int32_t cell = floorDiv(gx, 5);
+	bool tall = (col->flags & COL_TALL_TREES) != 0;
+//	A tall forest needs room for its crowns, a normal one is packed as tightly
+//	as the screen allows: one tree every three tiles instead of every five
+	int spacing = tall ? 4 : (col->biome == BIOME_FOREST ? 3 : 5);
+	int32_t cell = floorDiv(gx, spacing);
 	uint32_t h = hash1(cell, SALT_TREE);
 	int density;
 
-	if(gx != cell * 5 + 1 + (int32_t)(h % 3)) return 0;
+	if(gx != cell * spacing + 1 + (int32_t)(h % (spacing - 1))) return 0;
 	switch(col->biome)
 	{
-		case BIOME_FOREST: density = 75; break;
+		case BIOME_FOREST: density = tall ? 65 : 70; break;
 		case BIOME_JUNGLE: density = 85; break;
 		case BIOME_SWAMP: density = 35; break;
 		case BIOME_PLAINS: density = 10; break;
@@ -1465,8 +1470,11 @@ static int treeHeight(int32_t gx, const Column *col)
 	switch(col->biome)
 	{
 		case BIOME_JUNGLE: return 10 + (h >> 16) % 9;
-		case BIOME_FOREST: return 5 + (h >> 16) % 8;
-		default: return 4 + (h >> 16) % 5;
+//		The screen is 64 pixels tall and a tile is 8 pixels, so eight tiles is the
+//		whole screen: normal trees have to stay well below that. The tall variant
+//		is the one that deliberately towers over the view.
+		case BIOME_FOREST: return tall ? 9 + (h >> 16) % 7 : 3 + (h >> 16) % 4;
+		default: return 3 + (h >> 16) % 4;
 	}
 }
 
@@ -1575,6 +1583,10 @@ static void buildColumns(void)
 		col->surf = surf;
 		col->biome = biome;
 		col->flags = surf <= SEA_LEVEL ? COL_DRY : 0;
+//		High weirdness turns a forest into the tall tree variant. The climate is
+//		already computed here, and weirdness is a slow 128 tile noise, so the two
+//		forests come out as coherent patches rather than noise.
+		if(biome == BIOME_FOREST && cl.w > 900) col->flags |= COL_TALL_TREES;
 		col->jungle = surf <= SEA_LEVEL ? clampQ11(imin(cl.t - 250, cl.h - 450) * 2) : -2048;
 		col->dirtDepth = 4 + (fbm1(gx, 4, 2, SALT_DIRT) >> 8);	// 4..19 rows of soil
 	}
