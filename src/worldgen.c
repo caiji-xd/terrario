@@ -41,7 +41,7 @@ enum Salts {
 	SALT_JUNGLE, SALT_WORM, SALT_WORM2, SALT_LAKE, SALT_MINE, SALT_CABIN,
 	SALT_HOUSE, SALT_ORE, SALT_GEM, SALT_WEB, SALT_POT, SALT_CRYST, SALT_TREE,
 	SALT_CACTUS, SALT_PLANT, SALT_VINE, SALT_TORCH, SALT_JPLANT,
-	SALT_DIRT_BAND
+	SALT_DIRT_BAND, SALT_DIRT_BAND2, SALT_DIRT_BAND3, SALT_ROUGH
 };
 
 static uint32_t worldSeed;
@@ -263,6 +263,45 @@ static const SplinePoint erosionSpline[] = {
 
 #define SPLINE_LEN(s) ((int)(sizeof(s) / sizeof(s[0])))
 
+/*	Roughness noise: the octaves that keep the surface from looking smooth.
+
+	Plain fBm halves the amplitude of every octave, so the high frequencies carry
+	almost no energy. Since evalColumn quantises the height to whole tiles
+	(h >> 4), whatever is left below that resolution is simply thrown away and the
+	terrain reads as gentle rolling hills. Minecraft 1.18 instead stacks many
+	octaves with a slow amplitude decay and folds some of them into ridges, which
+	is what makes its terrain jagged.
+
+	Here the octaves run from a 64 tile wavelength down to 2 tiles with only a
+	25% amplitude decay, and the two middle ones are folded (|n|) so their crests
+	are sharp instead of rounded. The 2 tile octave is what puts the small steps
+	and broken rock into the surface; without it the terrain only has smooth
+	curves even when the relief is large. The whole stack is scaled by the
+	erosion-driven amplitude, so plains stay walkable while mountains get teeth.
+
+	Returns 1/16 tiles. */
+#define ROUGH_OCTAVES 6
+
+static int roughnessAt(int32_t gx, int amp)
+{
+	static const int8_t shifts[ROUGH_OCTAVES] = {6, 5, 4, 3, 2, 1};
+	static const int16_t amps[ROUGH_OCTAVES] = {96, 80, 64, 56, 40, 16};	// 1/16 tiles
+	int sum = 0;
+
+	for(int i = 0; i < ROUGH_OCTAVES; i++)
+	{
+		int n = (int)vnoise1(gx, shifts[i], SALT_ROUGH + i) - 2048;
+
+//		Fold the middle octaves: |n| peaks where the noise crosses zero, so the
+//		ridge has a sharp crest rather than a rounded bump
+		if(i == 2 || i == 3) n = iabs(n) - 1024;
+		sum += (n * amps[i]) >> 11;
+	}
+//	Scale by erosion, but with a floor, so plains get texture too instead of
+//	being perfectly smooth: a 0.5..1.25 gain over amp 96..288
+	return (sum * (amp + 32)) >> 8;
+}
+
 /* Height of the terrain above sea level, in 1/16 tiles */
 static int heightAt(int32_t gx, const Climate *cl)
 {
@@ -270,8 +309,14 @@ static int heightAt(int32_t gx, const Climate *cl)
 	int amp = spline(erosionSpline, SPLINE_LEN(erosionSpline), cl->e);
 	int detail = centred(fbm1(gx, 5, 3, SALT_DETAIL), 512);
 
-	h += (detail * amp) >> 11;
+//	A floor on the amplitude: the erosion spline alone leaves most of the world
+//	at +-6 tiles, which is what made it read as smooth. Peaks still use the raw
+//	value, so mountains keep their shape.
+	int bumpy = amp + 64;
+
+	h += (detail * bumpy) >> 11;
 	h += (vnoise1(gx, 2, SALT_JITTER) - 2048) >> 7;
+	h += roughnessAt(gx, bumpy);
 
 //	Peaks: low erosion inland, shaped by the folded weirdness like Minecraft's
 //	"peaks and valleys" parameter
@@ -1221,10 +1266,10 @@ static void drawDirtBands(void)
 		int32_t gx = chunkX0 + x;
 		const Column *col = colAt(gx);
 		int wobble = (vnoise1(gx, 5, SALT_DIRT_BAND) >> 9) - 4;	// -4..3 rows
-		int thickness = 1 + (vnoise1(gx, 6, SALT_DIRT_BAND + 1) >> 10);	// 1..4 rows
+		int thickness = 1 + (vnoise1(gx, 6, SALT_DIRT_BAND2) >> 10);	// 1..4 rows
 
 //		Seams fade in and out over a few chunks, so they read as broken strata
-		if(vnoise1(gx, 7, SALT_DIRT_BAND + 2) < 1600) continue;
+		if(vnoise1(gx, 7, SALT_DIRT_BAND3) < 1600) continue;
 
 		for(int y = 0; y < CS; y++)
 		{
