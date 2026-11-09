@@ -14,13 +14,24 @@
 #include "render.h"
 #include "npc.h"
 #include "defs.h"
+#include "housing.h"
 
 struct Stream stream;
 
 #define CHUNK_MAGIC 0x4B4E4843u
-#define CHUNK_VERSION 3
+/* Version 4 added the background wall layer after the tiles. Version 3 files
+   (tiles only) still load: their natural walls are regenerated. */
+#define CHUNK_VERSION 4
+#define CHUNK_VERSION_NO_WALLS 3
 #define CHUNK_BYTES (CHUNK_SIZE * CHUNK_SIZE)
+#define WALL_BYTES (CHUNK_SIZE * CHUNK_SIZE / 2)
 #define NUM_SLOTS (WINDOW_CHUNKS_X * WINDOW_CHUNKS_Y)
+
+enum LoadResults {
+	LOAD_NOT_SAVED,		// Generate the whole chunk
+	LOAD_FULL,			// Tiles and walls came from the file
+	LOAD_TILES_ONLY		// Old file: tiles from the file, walls generated
+};
 
 struct ChunkFileHeader {
 	uint32_t magic;
@@ -33,12 +44,13 @@ struct ChunkFileHeader {
 
 _Static_assert(sizeof(struct ChunkFileHeader) % 2 == 0, "chunk header must be even-sized");
 _Static_assert((CHUNK_BYTES) % 2 == 0, "chunk data must be even-sized");
+_Static_assert((WALL_BYTES) % 2 == 0, "wall data must be even-sized");
 
 /* Pending chunk I/O, filled in before a gint_world_switch() */
 static int ioCount;
 static int ioChunkX[NUM_SLOTS], ioChunkY[NUM_SLOTS];
 static int ioSlotX[NUM_SLOTS], ioSlotY[NUM_SLOTS];
-static bool ioLoaded[NUM_SLOTS];
+static uint8_t ioLoaded[NUM_SLOTS];
 
 static inline int floorDivInt(int a, int b)
 {
@@ -48,6 +60,12 @@ static inline int floorDivInt(int a, int b)
 static inline uint8_t *slotPtr(int sx, int sy)
 {
 	return (uint8_t *)world.tiles + (sy * CHUNK_SIZE) * WINDOW_WIDTH + sx * CHUNK_SIZE;
+}
+
+/* Same chunk in the nibble-packed wall layer (two walls per byte) */
+static inline uint8_t *slotWalls(int sx, int sy)
+{
+	return world.walls + (((sy * CHUNK_SIZE) * WINDOW_WIDTH + sx * CHUNK_SIZE) >> 1);
 }
 
 /* Chunk files are named C + 3 base-32 digits of X + 2 digits of Y */
@@ -73,7 +91,7 @@ static bool writeChunkFile(int chunkX, int chunkY)
 		.chunkY = chunkY,
 		.seed = save.worldSeed
 	};
-	int size = sizeof(header) + CHUNK_BYTES;
+	int size = sizeof(header) + CHUNK_BYTES + WALL_BYTES;
 	int descriptor;
 
 	chunkPath(chunkX, chunkY, path);
@@ -82,7 +100,7 @@ static bool writeChunkFile(int chunkX, int chunkY)
 	descriptor = BFile_Open(path, BFile_WriteOnly);
 	if(descriptor < 0) return false;
 	if(BFile_Write(descriptor, &header, sizeof(header)) < 0
-	|| BFile_Write(descriptor, stream.ioBuffer, CHUNK_BYTES) < 0)
+	|| BFile_Write(descriptor, stream.ioBuffer, CHUNK_BYTES + WALL_BYTES) < 0)
 	{
 		BFile_Close(descriptor);
 		return false;
@@ -93,33 +111,38 @@ static bool writeChunkFile(int chunkX, int chunkY)
 
 /* Reads a chunk file into the I/O buffer. Missing files, files from another
    world and damaged files all count as "not saved": the chunk is then simply
-   generated again. */
-static bool readChunkFile(int chunkX, int chunkY)
+   generated again. Returns one of enum LoadResults. */
+static int readChunkFile(int chunkX, int chunkY)
 {
 	uint16_t path[48];
 	struct ChunkFileHeader header;
 	int descriptor;
+	int size;
+	bool hasWalls;
 
 	chunkPath(chunkX, chunkY, path);
 	descriptor = BFile_Open(path, BFile_ReadOnly);
-	if(descriptor < 0) return false;
-	if(BFile_Size(descriptor) != (int)(sizeof(header) + CHUNK_BYTES)
-	|| BFile_Read(descriptor, &header, sizeof(header), 0) < 0)
+	if(descriptor < 0) return LOAD_NOT_SAVED;
+	size = BFile_Size(descriptor);
+	if(size < (int)sizeof(header) || BFile_Read(descriptor, &header, sizeof(header), 0) < 0)
 	{
 		BFile_Close(descriptor);
-		return false;
+		return LOAD_NOT_SAVED;
 	}
-	if(header.magic != CHUNK_MAGIC || header.version != CHUNK_VERSION
+	hasWalls = header.version == CHUNK_VERSION;
+	if(header.magic != CHUNK_MAGIC
+	|| (header.version != CHUNK_VERSION && header.version != CHUNK_VERSION_NO_WALLS)
+	|| size != (int)(sizeof(header) + CHUNK_BYTES + (hasWalls ? WALL_BYTES : 0))
 	|| header.size != CHUNK_SIZE || header.chunkX != chunkX
 	|| header.chunkY != chunkY || header.seed != save.worldSeed)
 	{
 		BFile_Close(descriptor);
-		return false;
+		return LOAD_NOT_SAVED;
 	}
-	if(BFile_Read(descriptor, stream.ioBuffer, CHUNK_BYTES, sizeof(header)) < 0)
+	if(BFile_Read(descriptor, stream.ioBuffer, size - sizeof(header), sizeof(header)) < 0)
 	{
 		BFile_Close(descriptor);
-		return false;
+		return LOAD_NOT_SAVED;
 	}
 	BFile_Close(descriptor);
 
@@ -127,21 +150,39 @@ static bool readChunkFile(int chunkX, int chunkY)
 	{
 		if(stream.ioBuffer[i] >= TILES_COUNT) stream.ioBuffer[i] = TILE_STONE;
 	}
-	return true;
+	if(hasWalls)
+	{
+		uint8_t *walls = stream.ioBuffer + CHUNK_BYTES;
+		for(int i = 0; i < WALL_BYTES; i++)
+		{
+			if((walls[i] & 15) >= WALLS_COUNT) walls[i] &= 0xf0;
+			if((walls[i] >> 4) >= WALLS_COUNT) walls[i] &= 0x0f;
+		}
+	}
+	return hasWalls ? LOAD_FULL : LOAD_TILES_ONLY;
 }
 
+/* The I/O buffer holds a chunk's tiles followed by its walls */
 static void copyOut(int sx, int sy)
 {
 	uint8_t *src = slotPtr(sx, sy);
+	uint8_t *srcWalls = slotWalls(sx, sy);
 	for(int row = 0; row < CHUNK_SIZE; row++)
+	{
 		memcpy(stream.ioBuffer + row * CHUNK_SIZE, src + row * WINDOW_WIDTH, CHUNK_SIZE);
+		memcpy(stream.ioBuffer + CHUNK_BYTES + row * (CHUNK_SIZE / 2), srcWalls + row * (WINDOW_WIDTH / 2), CHUNK_SIZE / 2);
+	}
 }
 
-static void copyIn(int sx, int sy)
+static void copyIn(int sx, int sy, bool walls)
 {
 	uint8_t *dest = slotPtr(sx, sy);
+	uint8_t *destWalls = slotWalls(sx, sy);
 	for(int row = 0; row < CHUNK_SIZE; row++)
+	{
 		memcpy(dest + row * WINDOW_WIDTH, stream.ioBuffer + row * CHUNK_SIZE, CHUNK_SIZE);
+		if(walls) memcpy(destWalls + row * (WINDOW_WIDTH / 2), stream.ioBuffer + CHUNK_BYTES + row * (CHUNK_SIZE / 2), CHUNK_SIZE / 2);
+	}
 }
 
 /* Runs in the OS world. Returns the number of chunks that failed to save. */
@@ -164,7 +205,7 @@ static int loadChunksOp()
 	for(int k = 0; k < ioCount; k++)
 	{
 		ioLoaded[k] = readChunkFile(ioChunkX[k], ioChunkY[k]);
-		if(ioLoaded[k]) copyIn(ioSlotX[k], ioSlotY[k]);
+		if(ioLoaded[k] != LOAD_NOT_SAVED) copyIn(ioSlotX[k], ioSlotY[k], ioLoaded[k] == LOAD_FULL);
 	}
 	return 0;
 }
@@ -202,7 +243,7 @@ static void shiftObjects(int dTilesX, int dTilesY)
 	player.cursorWorld.y += dy;
 	player.cursorTile.x += dTilesX;
 	player.cursorTile.y += dTilesY;
-	if(player.tool.type == TOOL_TYPE_PICK)
+	if(player.tool.type == TOOL_TYPE_PICK || player.tool.type == TOOL_TYPE_HAMMER)
 	{
 		player.tool.data.pickData.targeted.x += dTilesX;
 		player.tool.data.pickData.targeted.y += dTilesY;
@@ -241,6 +282,7 @@ static void shiftObjects(int dTilesX, int dTilesY)
 //	The variant buffer still describes the same tiles
 	varBufferPos.x += dTilesX;
 	varBufferPos.y += dTilesY;
+	housingShift();
 }
 
 static int clampOrigin(int value, int limit, int size)
@@ -298,6 +340,13 @@ static bool moveWindow(int newX, int newY, bool haveOld, bool showProgress)
 
 		if(offset > 0) memmove(buffer, buffer + offset, size - offset);
 		else if(offset < 0) memmove(buffer - offset, buffer, size + offset);
+
+//		Same for the wall layer, at half a byte per tile (offset is even)
+		offset /= 2;
+		size /= 2;
+		buffer = world.walls;
+		if(offset > 0) memmove(buffer, buffer + offset, size - offset);
+		else if(offset < 0) memmove(buffer - offset, buffer, size + offset);
 	}
 	for(int sy = 0; sy < WINDOW_CHUNKS_Y; sy++)
 	{
@@ -323,7 +372,7 @@ static bool moveWindow(int newX, int newY, bool haveOld, bool showProgress)
 			ioChunkY[ioCount] = (newY >> CHUNK_SHIFT) + sy;
 			ioSlotX[ioCount] = sx;
 			ioSlotY[ioCount] = sy;
-			ioLoaded[ioCount] = false;
+			ioLoaded[ioCount] = LOAD_NOT_SAVED;
 			ioCount++;
 		}
 	}
@@ -331,9 +380,17 @@ static bool moveWindow(int newX, int newY, bool haveOld, bool showProgress)
 	if(ioCount > 0) gint_world_switch(GINT_CALL(loadChunksOp));
 	for(int k = 0; k < ioCount; k++)
 	{
-		if(ioLoaded[k]) continue;
+		if(ioLoaded[k] == LOAD_FULL) continue;
 		if(showProgress) middleText("Generating World", done * 100 / total);
-		wgGenerateChunk(ioChunkX[k], ioChunkY[k], slotPtr(ioSlotX[k], ioSlotY[k]), WINDOW_WIDTH);
+		if(ioLoaded[k] == LOAD_TILES_ONLY)
+		{
+//			Old chunk file: keep its tiles, only take the natural walls. The
+//			I/O buffer is free again and serves as scratch for the tiles.
+			wgGenerateChunk(ioChunkX[k], ioChunkY[k], stream.ioBuffer, CHUNK_SIZE, slotWalls(ioSlotX[k], ioSlotY[k]), WINDOW_WIDTH);
+//			A wall change now differs from the v3 file, so write it back as v4
+			stream.dirty[ioSlotY[k]][ioSlotX[k]] = 1;
+		}
+		else wgGenerateChunk(ioChunkX[k], ioChunkY[k], slotPtr(ioSlotX[k], ioSlotY[k]), WINDOW_WIDTH, slotWalls(ioSlotX[k], ioSlotY[k]), WINDOW_WIDTH);
 		done++;
 	}
 
@@ -356,7 +413,7 @@ bool streamInit(int globalTileX, int globalTileY)
 {
 	int x, y;
 
-	if(stream.ioBuffer == NULL) stream.ioBuffer = malloc(CHUNK_BYTES);
+	if(stream.ioBuffer == NULL) stream.ioBuffer = malloc(CHUNK_BYTES + WALL_BYTES);
 	if(stream.ioBuffer == NULL) return false;
 	memset(stream.dirty, 0, sizeof(stream.dirty));
 	stream.error = -99;

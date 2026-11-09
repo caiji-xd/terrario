@@ -10,6 +10,7 @@ World API functions.
 #include <stdbool.h>
 
 #include "tiles.h"
+#include "walls.h"
 #include "stream.h"
 #include "inventory.h"
 #include "render.h"
@@ -72,6 +73,8 @@ typedef struct {
 
 struct World {
 	Tile *tiles;
+//	Background wall layer, one 4-bit enum Walls per tile (see walls.h, wall.h)
+	uint8_t *walls;
 	Entity *entities;
 	int numNPCs;
 	NPC *npcs;
@@ -141,6 +144,30 @@ static inline void setTileNatural(int x, int y, enum Tiles tile)
 	   (unsigned)y >= (unsigned)game.WORLD_HEIGHT ||
 	   (unsigned)tile >= TILES_COUNT) return;
 	world.tiles[y * game.WORLD_WIDTH + x] = (Tile){tile};
+}
+
+/* getWall
+Returns the background wall (enum Walls) at a window-local tile. Outside the
+window there is no wall.
+*/
+static inline int getWall(int x, int y)
+{
+	if((unsigned)x >= (unsigned)game.WORLD_WIDTH ||
+	   (unsigned)y >= (unsigned)game.WORLD_HEIGHT) return WALL_NONE;
+	return wallsGet(world.walls, game.WORLD_WIDTH, x, y);
+}
+
+/* setWall
+Changes the background wall at a window-local tile and marks its chunk as
+modified. Out-of-window positions are ignored.
+*/
+static inline void setWall(int x, int y, int wall)
+{
+	if((unsigned)x >= (unsigned)game.WORLD_WIDTH ||
+	   (unsigned)y >= (unsigned)game.WORLD_HEIGHT ||
+	   (unsigned)wall >= WALLS_COUNT) return;
+	wallsSet(world.walls, game.WORLD_WIDTH, x, y, wall);
+	streamMarkDirty(x, y);
 }
 
 /* isUnderground

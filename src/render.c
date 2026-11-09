@@ -16,6 +16,9 @@
 #include "inventory.h"
 #include "menu.h"
 #include "chat.h"
+#include "wall.h"
+#include "housing.h"
+#include "walldebug.h"
 
 Coords varBufferPos = {0, 0};
 int viewShift = 3;
@@ -57,6 +60,155 @@ void renderChat()
 		dtext_opt(0, 58 - 7 * messageIdx, C_BLACK, C_WHITE, DTEXT_LEFT, DTEXT_TOP, currMessage->message);
 		currMessage = currMessage->previous;
 		messageIdx++;
+	}
+}
+
+/* A wall's tile is hidden if a fully connected opaque block covers it */
+static bool wallCovered(int x, int y, const TileData *tile)
+{
+	if(!tile->render || tile->physics != PHYS_SOLID) return false;
+	if(tile->spriteType != TYPE_SHEET && tile->spriteType != TYPE_SHEET_VAR) return false;
+	if(tile->sprite == tiles[TILE_GLASS].sprite) return false;
+	return findRenderState(x, y) == 0xf;
+}
+
+/* Two walls join seamlessly if they look the same (natural and placed Dirt
+   Walls share a sprite and blend, as in Terraria 1.0.6.1). Elsewhere each
+   wall draws its own edge. */
+static inline bool wallJoins(int x, int y, const bopti_image_t *sprite)
+{
+	return wallData[getWall(x, y)].sprite == sprite;
+}
+
+/* renderWalls
+Background walls, drawn right after the sky/biome background and before
+everything else, like Terraria's wall layer ("Walls are hidden behind
+everything else", wiki).
+
+Every wall frame is 10x10 for an 8x8 tile: on sides without a matching wall
+it overhangs its tile by one pixel with an outline, which is the gray screen
+version of Terraria's wall sprites that bleed past their 16x16 tile. */
+static void renderWalls(int tileLeftX, int tileTopY, int tileRightX, int tileBottomY,
+	int camOffsetX, int camOffsetY, int scrShift, int tilePx, int crop)
+{
+	for(int y = tileTopY - 1; y <= tileBottomY + 1; y++)
+	{
+		for(int x = tileLeftX - 1; x <= tileRightX + 1; x++)
+		{
+			int wall = getWall(x, y);
+			const WallData *data;
+			const TileData *tile;
+			int state, variant, px, py;
+
+			if(wall == WALL_NONE) continue;
+			data = &wallData[wall];
+			tile = &tiles[getTile(x, y).id];
+
+			state = wallJoins(x - 1, y, data->sprite)
+				| wallJoins(x, y - 1, data->sprite) << 1
+				| wallJoins(x + 1, y, data->sprite) << 2
+				| wallJoins(x, y + 1, data->sprite) << 3;
+			if(state == 0xf && wallCovered(x, y, tile)) continue;
+
+			variant = wallVariant(x, y);
+			px = ((x << 3) - camOffsetX) >> scrShift;
+			py = ((y << 3) - camOffsetY) >> scrShift;
+			if(scrShift == 0)
+			{
+				dsubimage(px - 1, py - 1, data->sprite, 1 + 11 * state, 1 + 11 * variant, 10, 10, DIMAGE_NONE);
+			}
+			else
+			{
+//				Zoomed out: the middle of the tile only, no overhang
+				dsubimage(px, py, data->sprite, 2 + 11 * state + crop, 2 + 11 * variant + crop, tilePx, tilePx, DIMAGE_NONE);
+			}
+		}
+	}
+}
+
+/* Debug/feedback overlays drawn over the world (walldebug.c, housing query) */
+static void renderWallOverlays(int tileLeftX, int tileTopY, int tileRightX, int tileBottomY,
+	int camOffsetX, int camOffsetY, int scrShift, int tilePx)
+{
+	bool showSafety = wallDebug.overlay;
+	bool showRoom = housingHighlightTicks > 0;
+
+	if(!showSafety && !showRoom) return;
+
+	for(int y = tileTopY; y <= tileBottomY; y++)
+	{
+		for(int x = tileLeftX; x <= tileRightX; x++)
+		{
+			int px = ((x << 3) - camOffsetX) >> scrShift;
+			int py = ((y << 3) - camOffsetY) >> scrShift;
+			int wall = getWall(x, y);
+
+//			Safe and unsafe walls look the same in Terraria, so the debug
+//			overlay marks them: X = unsafe, dot = safe
+			if(showSafety && wall != WALL_NONE)
+			{
+				int c = tilePx >> 1;
+				if(wallData[wall].safe) dpixel(px + c, py + c, C_INVERT);
+				else
+				{
+					dpixel(px + c - 1, py + c - 1, C_INVERT);
+					dpixel(px + c + 1, py + c - 1, C_INVERT);
+					dpixel(px + c, py + c, C_INVERT);
+					dpixel(px + c - 1, py + c + 1, C_INVERT);
+					dpixel(px + c + 1, py + c + 1, C_INVERT);
+				}
+			}
+
+//			Housing query feedback: the evaluated room's tiles get a corner
+//			mark, and blink if the query failed
+			if(showRoom && housingInLastRoom(x, y)
+			&& (housingLastResult == HOUSING_OK || (housingHighlightTicks & 8)))
+			{
+				dpixel(px, py, C_INVERT);
+			}
+		}
+	}
+
+//	Where a room check failed, show the offending tile
+	if(showRoom && housingLastResult != HOUSING_OK && housingLastFail.x >= 0 && (housingHighlightTicks & 4))
+	{
+		int px = ((housingLastFail.x << 3) - camOffsetX) >> scrShift;
+		int py = ((housingLastFail.y << 3) - camOffsetY) >> scrShift;
+		drect(px, py, px + tilePx - 1, py + tilePx - 1, C_INVERT);
+	}
+}
+
+/* Status messages are long, so they wrap at word boundaries */
+static void renderStatusMessage()
+{
+	char line[34];
+	const char *text = statusMessage;
+	int y = 14;
+
+	if(statusMessageTicks <= 0) return;
+	while(*text && y < 40)
+	{
+		int len = strlen(text), cut = len;
+		int width;
+
+		for(;;)
+		{
+			memcpy(line, text, cut);
+			line[cut] = '\0';
+			dsize(line, NULL, &width, NULL);
+			if(width <= 124 || cut <= 1) break;
+			while(cut > 1 && text[cut - 1] != ' ') cut--;
+			if(cut > 1 && text[cut - 1] == ' ') cut--;
+			if(cut <= 1)
+			{
+				cut = 1;
+				while(cut < len && cut < 33) cut++;
+			}
+		}
+		dtext_opt(64, y, C_BLACK, C_WHITE, DTEXT_CENTER, DTEXT_TOP, line);
+		text += cut;
+		while(*text == ' ') text++;
+		y += 7;
 	}
 }
 
@@ -147,6 +299,8 @@ void render(bool renderHUD)
 		orbY = 64 * sin(dayPolarAngle - PI / 2.0) + 64;
 		dsubimage(orbX, orbY, &img_sunmoon, 16, 0, 16, 16, DIMAGE_NONE);
 	}
+
+	renderWalls(tileLeftX, tileTopY, tileRightX, tileBottomY, camOffsetX, camOffsetY, scrShift, tilePx, crop);
 
 //	Do an initial pass to render treetops
 	for(unsigned int y = tileTopY; y <= min(tileBottomY + 4, game.WORLD_HEIGHT - 1); y++)
@@ -252,7 +406,23 @@ void render(bool renderHUD)
 		}
 	}
 
-//	Render cracks on the tile the player's mining
+	renderWallOverlays(tileLeftX, tileTopY, tileRightX, tileBottomY, camOffsetX, camOffsetY, scrShift, tilePx);
+
+//	Render cracks on the tile the player's mining (or the wall being hammered:
+//	4 stages over the wall's 100 hit points)
+	if(player.tool.type == TOOL_TYPE_HAMMER && player.tool.data.pickData.targeted.damage > 0)
+	{
+		heldPickData = &player.tool.data.pickData;
+		subrectY = min(3, heldPickData->targeted.damage * 4 / WALL_HIT_POINTS) * 9 + 1;
+		dsubimage(
+			((heldPickData->targeted.x << 3) - camOffsetX) >> scrShift,
+			((heldPickData->targeted.y << 3) - camOffsetY) >> scrShift,
+			&img_tiles_cracks,
+			1 + crop, subrectY + crop,
+			tilePx, tilePx,
+			DIMAGE_NONE
+			);
+	}
 	if(player.tool.type == TOOL_TYPE_PICK && player.tool.data.pickData.targeted.damage > 0)
 	{
 		heldPickData = &player.tool.data.pickData;
@@ -318,7 +488,7 @@ void render(bool renderHUD)
 			dsubimage(entX, entY, &img_player, entSubrectX, entSubrectY, player.props.width + 4, 15, DIMAGE_NONE);
 
 //			Get the appropriate swing sprite
-			if(player.tool.type == TOOL_TYPE_PICK) swingSprite = player.tool.data.pickData.swingSprite;
+			if(player.tool.type == TOOL_TYPE_PICK || player.tool.type == TOOL_TYPE_HAMMER) swingSprite = player.tool.data.pickData.swingSprite;
 			else if(player.tool.type == TOOL_TYPE_SWORD) swingSprite = player.tool.data.swordData.swingSprite;
 			else swingSprite = NULL;
 
@@ -403,6 +573,7 @@ void render(bool renderHUD)
 
 //	Render the chat
 	renderChat();
+	renderStatusMessage();
 }
 
 void createExplosion(int x, int y)

@@ -9,6 +9,7 @@
 #include "save.h"
 #include "chest.h"
 #include "worldgen.h"
+#include "wall.h"
 
 #define PI 3.14159265358979323846
 
@@ -610,7 +611,9 @@ void placeTile(int x, int y, Item *item)
 
 				default:
 					success = false;
-					for(int check = 0; check < 4; check++)
+//					"Torches can be placed [...] on background walls" (wiki, Torches)
+					if(item->id == ITEM_TORCH && getWall(x, y) != WALL_NONE) success = true;
+					for(int check = 0; check < 4 && !success; check++)
 					{
 						checkX = x + checkDeltas[check][0];
 						checkY = y + checkDeltas[check][1];
@@ -741,6 +744,16 @@ void removeTile(int x, int y)
 		if(tiles[getTile(x, y - 1).id].support == SUPPORT_NEED) removeTile(x, y - 1);
 
 		if(tiles[getTile(x, y + 1).id].support == SUPPORT_TOP) removeTile(x, y + 1);
+
+//		"If all adjacent blocks surrounding a Torch are removed (left, right,
+//		and bottom) and no wall exists behind it, it drops" (wiki, Torches)
+		for(int side = -1; side <= 1; side++)
+		{
+			int tx = x + (side == 0 ? 0 : side), ty = y - (side == 0 ? 1 : 0);
+			if(getTile(tx, ty).id != TILE_TORCH || getWall(tx, ty) != WALL_NONE) continue;
+			if(getTile(tx - 1, ty).id == TILE_NOTHING && getTile(tx + 1, ty).id == TILE_NOTHING
+			&& getTile(tx, ty + 1).id == TILE_NOTHING) removeTile(tx, ty);
+		}
 	}
 }
 

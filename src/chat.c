@@ -9,6 +9,16 @@
 
 ChatMessage *lastMessage = NULL;
 
+char statusMessage[64];
+int statusMessageTicks = 0;
+
+void setStatusMessage(const char *message)
+{
+	strncpy(statusMessage, message, sizeof(statusMessage) - 1);
+	statusMessage[sizeof(statusMessage) - 1] = '\0';
+	statusMessageTicks = STATUS_MESSAGE_TICKS;
+}
+
 void sendMessage(char *message)
 {
 	ChatMessage *newMessage = malloc(sizeof(ChatMessage));
@@ -48,6 +58,8 @@ void clearMessage(ChatMessage *message)
 void updateChat()
 {
 	ChatMessage *currMessage = lastMessage;
+
+	if(statusMessageTicks > 0) statusMessageTicks--;
 
 	while(currMessage != NULL)
 	{

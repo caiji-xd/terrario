@@ -14,6 +14,7 @@ player walks. Values called "Q12" are scaled by 4096, "Q11" values are in
 #include <string.h>
 
 #include "tiles.h"
+#include "walls.h"
 #include "worldgen.h"
 
 /* Scratch buffers only live during one wgGenerateChunk() call, which never
@@ -505,7 +506,8 @@ static WG_SCRATCH Span houseSpans[MAX_SPANS];
 static int numLakeSpans, numHouseSpans;
 
 static uint8_t *chunkOut;
-static int chunkStride;
+static uint8_t *wallOut;
+static int chunkStride, wallStride;
 static int32_t chunkX0, chunkY0;
 
 static inline Column *colAt(int32_t gx)
@@ -531,6 +533,12 @@ static inline void setT(int32_t gx, int32_t gy, uint8_t tile)
 static inline void put(int32_t gx, int32_t gy, uint8_t tile)
 {
 	if(inChunk(gx, gy)) setT(gx, gy, tile);
+}
+
+/* Background walls of the chunk being generated (nibble-packed, see walls.h) */
+static inline void setW(int32_t gx, int32_t gy, uint8_t wall)
+{
+	if(inChunk(gx, gy)) wallsSet(wallOut, wallStride, gx - chunkX0, gy - chunkY0, wall);
 }
 
 static inline bool isSolid(uint8_t t)
@@ -1045,6 +1053,9 @@ static void drawCabin(const Piece *p)
 		for(int32_t x = p->b; x < p->b + p->c; x++) put(x, p->y0, TILE_PLATFORM);
 	}
 	for(int32_t y = p->y0 + 2; y <= p->y0 + 4; y++) put(doorX, y, TILE_DOOR_C);
+//	Underground Cabins are backed by Planked Walls (Terraria wiki, Planked Wall)
+	for(int32_t y = p->y0; y <= p->y1; y++)
+		for(int32_t x = p->x0; x <= p->x1; x++) setW(x, y, WALL_PLANKED);
 	if(p->flags & (PF_CHEST | PF_POT))
 	{
 		uint8_t l = (p->flags & PF_CHEST) ? TILE_CHEST_L : TILE_POT_L;
@@ -1118,7 +1129,11 @@ static void drawHouse(const Piece *p)
 			if(!inChunk(x, y)) continue;
 			if(y == p->y0 || y == fy || x == left || x == right) setT(x, y, TILE_WOOD);
 			else setT(x, y, TILE_NOTHING);
+//			Safe Wood Walls behind the whole house, so it is valid NPC housing
+			setW(x, y, WALL_WOOD);
 		}
+//		Nothing natural is left behind the headroom above the roof
+		for(int32_t y = p->y0 - 3; y < p->y0; y++) setW(x, y, WALL_NONE);
 	}
 //	Door in a side wall
 	for(int32_t y = fy - 3; y <= fy - 1; y++) put(doorRight ? right : left, y, TILE_DOOR_C);
@@ -1681,13 +1696,58 @@ static uint8_t surfaceTile(const Column *col, int32_t gx, int32_t gy)
 	return TILE_STONE;
 }
 
-void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride)
+/* naturalWall
+The natural (unsafe) background wall behind a tile of the untouched terrain,
+chosen before caves are carved so that caves keep the wall of the rock they
+were dug out of.
+
+Terraria wiki (Background walls, Notes): Dirt Walls cover the background of
+the Underground layer and appear in caves and under surface overhangs, while
+the Cavern layer below is mostly bare biome background. Mud Walls generate in
+the Jungle, Jungle Walls in the Underground Jungle. Cave Walls are found "in
+the Underground and Cavern layers" (wiki, Cave Walls), so the cavern layer
+keeps patches of them, placed with one of the cave noise fields. */
+static uint8_t naturalWall(const Column *col, int d, uint8_t tile, bool undergroundJungle, int patchNoise)
+{
+	if(d < WG_WALL_TOP_DEPTH) return WALL_NONE;
+	if(undergroundJungle) return WALL_JUNGLE_NATURAL;
+	if(d >= WG_CAVERN_DEPTH)
+		return (patchNoise > 1300 && tile == TILE_STONE) ? WALL_STONE_NATURAL : WALL_NONE;
+
+	switch(tile)
+	{
+		case TILE_MUD:
+		case TILE_GRASS_JUNGLE:
+			return WALL_MUD_NATURAL;
+
+		case TILE_DIRT:
+		case TILE_GRASS:
+		case TILE_CLAY:
+			return WALL_DIRT_NATURAL;
+
+		case TILE_SAND:
+//			Falling sand layers of deserts and beaches stay bare (approximation:
+//			Terraria uses sandstone/hardened sand walls in the Underground Desert)
+			return WALL_NONE;
+
+		case TILE_STONE:
+			return col->biome == BIOME_JUNGLE ? WALL_MUD_NATURAL : WALL_STONE_NATURAL;
+
+		default:
+			return WALL_NONE;
+	}
+}
+
+void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride, uint8_t *walls, int wStride)
 {
 	int32_t minSurf = INT32_MAX;
 	bool underground;
 
 	chunkOut = out;
+	wallOut = walls;
 	chunkStride = stride;
+	wallStride = wStride;
+	for(int y = 0; y < CS; y++) memset(walls + ((y * wStride) >> 1), 0, CS / 2);
 	chunkX0 = cx * CS;
 	chunkY0 = cy * CS;
 	numLakeSpans = numHouseSpans = 0;
@@ -1740,11 +1800,17 @@ void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride)
 				for(int k = 0; k < NUM_FIELDS; k++)
 					f[k] = lerpCell(grid[k][j][i], grid[k][j][i + 1], grid[k][j + 1][i], grid[k][j + 1][i + 1], fx, fy);
 
+				bool jungleCave = false;
 				if(t == TILE_STONE && d >= 6 && d < 120)
 				{
 					int jungle = col->jungle + (f[5] >> 1) - imax(0, d - 90) * 60;
-					if(jungle > 0) setT(gx, gy, t = TILE_MUD);
+					if(jungle > 0)
+					{
+						setT(gx, gy, t = TILE_MUD);
+						jungleCave = true;
+					}
 				}
+				setW(gx, gy, naturalWall(col, d, t, jungleCave, f[3]));
 
 				if(gy >= col->protectY && d >= sandRoof(col) && caveTest(f, d)) setT(gx, gy, TILE_NOTHING);
 			}

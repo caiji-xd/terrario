@@ -22,6 +22,7 @@ twice and compared) and prints the time per chunk.
 #include <time.h>
 
 #include "tiles.h"
+#include "walls.h"
 #include "worldgen.h"
 
 static const uint8_t colours[TILES_COUNT][3] = {
@@ -69,12 +70,26 @@ static const uint8_t colours[TILES_COUNT][3] = {
 	[TILE_GRASS_JUNGLE] = {120, 220, 30},
 };
 
+/* Background walls, drawn where there is no tile in front of them */
+static const uint8_t wallColours[WALLS_COUNT][3] = {
+	[WALL_DIRT_NATURAL] = {88, 62, 40},
+	[WALL_DIRT] = {98, 70, 45},
+	[WALL_STONE_NATURAL] = {68, 68, 72},
+	[WALL_STONE] = {78, 78, 82},
+	[WALL_WOOD] = {120, 85, 50},
+	[WALL_PLANKED] = {140, 100, 60},
+	[WALL_GLASS] = {170, 200, 230},
+	[WALL_MUD_NATURAL] = {62, 45, 45},
+	[WALL_MUD] = {70, 50, 50},
+	[WALL_JUNGLE_NATURAL] = {40, 72, 30},
+};
+
 int main(int argc, char **argv)
 {
 	uint32_t seed;
 	int x0, y0, w, h, scale = 1;
 	int cx0, cy0, cw, ch;
-	uint8_t *map, *check;
+	uint8_t *map, *check, *wallMap, *checkWalls;
 	FILE *f;
 	clock_t start;
 	long mismatches = 0;
@@ -99,7 +114,9 @@ int main(int argc, char **argv)
 
 	wgSetSeed(seed);
 	map = malloc((size_t)w * h);
+	wallMap = malloc((size_t)w * h / 2);
 	check = malloc(CHUNK_SIZE * CHUNK_SIZE);
+	checkWalls = malloc(CHUNK_SIZE * CHUNK_SIZE / 2);
 
 	start = clock();
 //	Generate in a scrambled order to make sure order doesn't matter
@@ -107,7 +124,8 @@ int main(int argc, char **argv)
 	{
 		int idx = (int)(((long)k * 7919) % (cw * ch));
 		int i = idx % cw, j = idx / cw;
-		wgGenerateChunk(cx0 + i, cy0 + j, map + (size_t)j * CHUNK_SIZE * w + i * CHUNK_SIZE, w);
+		size_t offset = (size_t)j * CHUNK_SIZE * w + i * CHUNK_SIZE;
+		wgGenerateChunk(cx0 + i, cy0 + j, map + offset, w, wallMap + offset / 2, w);
 	}
 	double elapsed = (double)(clock() - start) / CLOCKS_PER_SEC;
 	printf("%d chunks, %.3f ms/chunk\n", cw * ch, 1000.0 * elapsed / (cw * ch));
@@ -116,9 +134,13 @@ int main(int argc, char **argv)
 	{
 		for(int i = 0; i < cw; i++)
 		{
-			wgGenerateChunk(cx0 + i, cy0 + j, check, CHUNK_SIZE);
+			wgGenerateChunk(cx0 + i, cy0 + j, check, CHUNK_SIZE, checkWalls, CHUNK_SIZE);
 			for(int y = 0; y < CHUNK_SIZE; y++)
-				mismatches += memcmp(check + y * CHUNK_SIZE, map + ((size_t)j * CHUNK_SIZE + y) * w + i * CHUNK_SIZE, CHUNK_SIZE) != 0;
+			{
+				size_t offset = ((size_t)j * CHUNK_SIZE + y) * w + i * CHUNK_SIZE;
+				mismatches += memcmp(check + y * CHUNK_SIZE, map + offset, CHUNK_SIZE) != 0;
+				mismatches += memcmp(checkWalls + y * CHUNK_SIZE / 2, wallMap + offset / 2, CHUNK_SIZE / 2) != 0;
+			}
 		}
 	}
 	printf("determinism: %ld mismatching rows\n", mismatches);
@@ -134,19 +156,26 @@ int main(int argc, char **argv)
 		for(int x = 0; x < w * scale; x++)
 		{
 			uint8_t t = map[(size_t)(y / scale) * w + x / scale];
+			uint8_t wall = wallsGet(wallMap, w, x / scale, y / scale);
 			const uint8_t *c = t < TILES_COUNT ? colours[t] : (const uint8_t[]){255, 0, 0};
 			int gy = cy0 * CHUNK_SIZE + y / scale;
 			uint8_t px[3] = {c[0], c[1], c[2]};
-//			Darken the sky a little below sea level so it reads as underground air
-			if(t == TILE_NOTHING && gy > wgSurfaceY(cx0 * CHUNK_SIZE + x / scale) + 2)
+//			Empty tiles show their background wall, or dark bare cavern background
+			if(t == TILE_NOTHING && wall != WALL_NONE)
 			{
-				px[0] = 40; px[1] = 30; px[2] = 25;
+				px[0] = wallColours[wall][0]; px[1] = wallColours[wall][1]; px[2] = wallColours[wall][2];
+			}
+			else if(t == TILE_NOTHING && gy > wgSurfaceY(cx0 * CHUNK_SIZE + x / scale) + 2)
+			{
+				px[0] = 25; px[1] = 20; px[2] = 20;
 			}
 			fwrite(px, 1, 3, f);
 		}
 	}
 	fclose(f);
 	free(map);
+	free(wallMap);
 	free(check);
+	free(checkWalls);
 	return 0;
 }

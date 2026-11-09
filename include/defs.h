@@ -39,13 +39,21 @@ extern struct GameCompatibilityPresets game;
 #define VAR_BUF_HEIGHT 20
 #define VAR_BUF_OFFSET 5
 
-#define CHECK_BUFFER_SIZE 750
 
 #define GRAVITY_ACCEL 0.15
 
 #define INVENTORY_SIZE 24
 
 #define MAX_HOUSE_MARKERS 32
+
+/* Use time of wall items, in frames (wiki item data: 15 for every wall) */
+#define WALL_USE_TIME 15
+
+/* Background wall debug tools on [VARS] (walldebug.c). Set to 0 for releases. */
+#define ENABLE_WALL_DEBUG 1
+
+/* Status messages (housing query, bed): long Terraria texts, wrapped */
+#define STATUS_MESSAGE_TICKS 300
 #define MAX_NPCS 2
 
 // 12 minutes

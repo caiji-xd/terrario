@@ -91,10 +91,19 @@ Searches outwards from x = 0 for a dry, grassy column to spawn the player on.
 */
 int wgFindSpawnX(void);
 
+/* Natural background walls (see naturalWall() in worldgen.c): from this many
+   tiles below the surface... */
+#define WG_WALL_TOP_DEPTH 2
+/* ...down to this depth, where the "cavern layer" starts and the background
+   becomes bare (except in the underground jungle). */
+#define WG_CAVERN_DEPTH 60
+
 /* wgGenerateChunk
-Generates chunk (cx, cy) into out[y * stride + x] for 0 <= x, y < CHUNK_SIZE.
+Generates chunk (cx, cy) into out[y * stride + x] for 0 <= x, y < CHUNK_SIZE,
+and its natural background walls into the nibble-packed buffer `walls`, whose
+rows are wallStride walls wide (see walls.h; wallStride must be even).
 */
-void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride);
+void wgGenerateChunk(int cx, int cy, uint8_t *out, int stride, uint8_t *walls, int wallStride);
 
 /* wgChestLoot
 Chooses the loot category for a world-generated chest whose top-left tile is

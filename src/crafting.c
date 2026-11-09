@@ -65,6 +65,25 @@ const struct Recipe recipes[] = {
 	{	TILE_SAWMILL_L,		{ITEM_LOOM, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 12}																		}	},
 	{	TILE_LOOM_L,		{ITEM_SILK, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_COBWEB, PREFIX_NONE, 7}																		}	},
 	{	TILE_SAWMILL_L,		{ITEM_BED, PREFIX_NONE, 1},						2,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 15}, {ITEM_SILK, PREFIX_NONE, 5}											}	},
+//	Hammers and walls, from the wiki's recipe data (terraria.wiki.gg Cargo table
+//	"Recipes", desktop versions). Wood Walls also need a Work Bench there.
+	{	TILE_WBENCH_L,		{ITEM_WOODEN_HAMMER, PREFIX_NONE, 1},			1,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 8}																			}	},
+	{	TILE_ANVIL_L,		{ITEM_COPPER_HAMMER, PREFIX_NONE, 1},			2,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 3},		{ITEM_COPPER_BAR, PREFIX_NONE, 8}								}	},
+	{	TILE_ANVIL_L,		{ITEM_TIN_HAMMER, PREFIX_NONE, 1},				2,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 3},		{ITEM_TIN_BAR, PREFIX_NONE, 8}									}	},
+	{	TILE_ANVIL_L,		{ITEM_IRON_HAMMER, PREFIX_NONE, 1},				2,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 3},		{ITEM_IRON_BAR, PREFIX_NONE, 8}									}	},
+	{	TILE_WBENCH_L,		{ITEM_WOOD_WALL, PREFIX_NONE, 4},				1,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 1}																			}	},
+	{	TILE_WBENCH_L,		{ITEM_WOOD, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_WOOD_WALL, PREFIX_NONE, 4}																	}	},
+	{	TILE_WBENCH_L,		{ITEM_STONE_WALL, PREFIX_NONE, 4},				1,	(const Item[]){ {ITEM_STONE, PREFIX_NONE, 1}																		}	},
+	{	TILE_WBENCH_L,		{ITEM_STONE, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_STONE_WALL, PREFIX_NONE, 4}																	}	},
+	{	TILE_WBENCH_L,		{ITEM_DIRT_WALL, PREFIX_NONE, 4},				1,	(const Item[]){ {ITEM_DIRT, PREFIX_NONE, 1}																			}	},
+	{	TILE_WBENCH_L,		{ITEM_DIRT, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_DIRT_WALL, PREFIX_NONE, 4}																	}	},
+	{	TILE_WBENCH_L,		{ITEM_GLASS_WALL, PREFIX_NONE, 4},				1,	(const Item[]){ {ITEM_GLASS, PREFIX_NONE, 1}																		}	},
+	{	TILE_WBENCH_L,		{ITEM_GLASS, PREFIX_NONE, 1},					1,	(const Item[]){ {ITEM_GLASS_WALL, PREFIX_NONE, 4}																	}	},
+//	The wiki lists "Work Bench and Ecto Mist" for Mud Walls; Ecto Mist doesn't
+//	exist here, so the Work Bench alone is used
+	{	TILE_WBENCH_L,		{ITEM_MUD_WALL, PREFIX_NONE, 4},				1,	(const Item[]){ {ITEM_MUD, PREFIX_NONE, 1}																			}	},
+	{	TILE_WBENCH_L,		{ITEM_MUD, PREFIX_NONE, 1},						1,	(const Item[]){ {ITEM_MUD_WALL, PREFIX_NONE, 4}																		}	},
+	{	TILE_SAWMILL_L,		{ITEM_PLANKED_WALL, PREFIX_NONE, 4},			2,	(const Item[]){ {ITEM_WOOD, PREFIX_NONE, 1},		{ITEM_STONE, PREFIX_NONE, 1}									}	},
 };
 
 const int numRecipes = sizeof(recipes) / sizeof(struct Recipe);

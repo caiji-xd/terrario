@@ -13,6 +13,10 @@
 #include "crafting.h"
 #include "render.h"
 #include "chat.h"
+#include "wall.h"
+#include "housing.h"
+#include "walldebug.h"
+#include "map.h"
 
 static void useBucket()
 {
@@ -58,6 +62,42 @@ void useHeld()
 	if((unsigned)item->id >= ITEMS_COUNT || item->amount <= 0) return;
 	if(item->id == ITEM_EMPTY_BUCKET || item->id == ITEM_WATER_BUCKET) { useBucket(); return; }
 	itemData = &items[item->id];
+//	Background walls (wiki item data: use time 15)
+	if(itemData->type == TOOL_TYPE_WALL)
+	{
+		player.inventory.ticksSinceInteracted = 0;
+		if(placeWall(player.cursorTile.x, player.cursorTile.y, item)) player.useFrames = WALL_USE_TIME;
+		return;
+	}
+//	Hammers: background walls only (there are no slopes in this game)
+	if(itemData->type == TOOL_TYPE_HAMMER)
+	{
+		if(player.swingFrame == 0) player.swingFrame = 32;
+		heldPickData = &player.tool.data.pickData;
+		x = player.cursorTile.x;
+		y = player.cursorTile.y;
+		player.inventory.ticksSinceInteracted = 0;
+		if(x != heldPickData->targeted.x || y != heldPickData->targeted.y)
+		{
+			heldPickData->targeted.x = x;
+			heldPickData->targeted.y = y;
+			heldPickData->targeted.damage = 0;
+		}
+//		"When breaking background walls, the tool speed of a hammer is halved,
+//		rounded down." (wiki, Hammers)
+		switch(hitWall(x, y, heldPickData->power, &heldPickData->targeted.damage))
+		{
+			case WALL_HIT_DAMAGED:
+			case WALL_HIT_BROKEN:
+				player.useFrames = heldPickData->speed / 2;
+				break;
+
+			default:
+				player.useFrames = heldPickData->speed;
+				break;
+		}
+		return;
+	}
 //	Picks and swords
 	if(itemData->type == TOOL_TYPE_PICK || itemData->type == TOOL_TYPE_SWORD)
 	{
@@ -296,14 +336,21 @@ enum UpdateReturnCodes keyboardUpdate()
 						break;
 
 					case TILE_BED_EDGE:
-						if(getTile(x - 1, y).id == TILE_BED_EDGE) x--;
-						else if(getTile(x + 1, y).id == TILE_BED_EDGE) x++;
+//						Find the top middle tile of the 3x2 bed
+						if(getTile(x + 1, y).id == TILE_BED_MID) x++;
+						else if(getTile(x - 1, y).id == TILE_BED_MID) x--;
 					case TILE_BED_MID:
 						if(getTile(x, y - 1).id == TILE_BED_MID) y--;
-						if(!checkArea(x - 1, y - 1, 2, 1, false)) break;
+						{
+							struct HousingCheck check;
+//							Beds need a valid bedroom (wiki, Beds): the house
+//							frame and wall rules, no furniture
+							int result = housingCheckBed(x, y, &check);
+							setStatusMessage(housingMessage(&check, true));
+							if(result != HOUSING_OK) break;
+						}
 						player.spawn.x = (x + stream.originX) * 8;
 						player.spawn.y = (y - 1 + stream.originY) * 8;
-						sendMessage("Spawn set!");
 						break;
 
 					default:
@@ -348,13 +395,25 @@ enum UpdateReturnCodes keyboardUpdate()
 				break;
 			
 			case KEY_TAN:
+//				Housing query (wiki, House: Housing menu)
 				if(key.type != KEYEV_DOWN) break;
-				if(getTile(player.cursorTile.x, player.cursorTile.y).id != TILE_NOTHING) break;
-				if(checkHousingValid(player.cursorTile))
-				{
-					addMarker(player.cursorTile);
-				}
+				housingQuery(player.cursorTile);
 				break;
+
+			case KEY_OPTN:
+//				Full screen map
+				if(key.type != KEYEV_DOWN) break;
+				mapMenu();
+				clearevents();
+				return UPDATE_CONTINUE;
+
+#if ENABLE_WALL_DEBUG
+			case KEY_VARS:
+				if(key.type != KEYEV_DOWN) break;
+				wallDebugMenu();
+				clearevents();
+				return UPDATE_CONTINUE;
+#endif
 			
 			default:
 				break;

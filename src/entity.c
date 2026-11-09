@@ -14,6 +14,7 @@
 #include "render.h"
 #include "inventory.h"
 #include "menu.h"
+#include "wall.h"
 
 extern bopti_image_t
 img_ents_slime,
@@ -701,7 +702,12 @@ void doSpawningCycle()
 			spawnY = playerTileY + (((rand() % 25) - 12));
 			spawnY = min(max(spawnY, 0), game.WORLD_HEIGHT - 1);
 
+//			"If the tile chosen is an unactuated solid block [...] or if it has a
+//			safe background wall behind it, the attempt is considered invalid."
+//			The wall is only checked here, before the downward search for
+//			ground (wiki, NPC spawning).
 			if(tiles[getTile(spawnX, spawnY).id].physics != PHYS_NON_SOLID) continue;
+			if(wallIsSafe(spawnX, spawnY)) continue;
 
 			while(spawnY < game.WORLD_HEIGHT)
 			{

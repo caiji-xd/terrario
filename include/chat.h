@@ -31,6 +31,15 @@ message: Pointer to the message to clear
 */
 void clearMessage(ChatMessage *message);
 
+/* setStatusMessage
+Shows a status message (wrapped over several lines) at the top of the screen
+for a few seconds. The text is copied.
+*/
+void setStatusMessage(const char *message);
+
+extern char statusMessage[];
+extern int statusMessageTicks;
+
 /* updateChat
 Updates chat, should be called every engine tick.
 */

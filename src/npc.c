@@ -11,9 +11,7 @@
 #include "world.h"
 #include "render.h"
 #include "stream.h"
-
-/* Flood-fill buffer for the housing check, in on-chip memory */
-GYRAM Coords checkCoords[CHECK_BUFFER_SIZE];
+#include "housing.h"
 
 /* NPCs outside the chunk window are frozen until the player comes back */
 static bool npcInWindow(const NPC *npc)
@@ -177,19 +175,36 @@ void doNPCHouseCheck()
 
 	if(!spawnNPC) return;
 
-	addNPC(npcToAdd);
-	npc = &world.npcs[world.numNPCs - 1];
+//	"NPCs that can live in houses will spawn after their specific spawning
+//	conditions were met and there is an empty valid house" and a killed NPC
+//	"will not respawn until a new house becomes available" (wiki, NPCs). The
+//	Guide's very first appearance doesn't need one; that happens when the
+//	world is created (main.c).
 	for(int i = 0; i < world.numMarkers; i++)
 	{
 		marker = &world.markers[i];
-		if(marker->occupant == -1)
+		if(marker->occupant != -1) continue;
+//		Only houses that are loaded can be re-checked before moving in
+		if(marker->position.x <= 0 || marker->position.x >= game.WORLD_WIDTH - 1
+		|| marker->position.y <= 0 || marker->position.y >= game.WORLD_HEIGHT - 1) continue;
 		{
-			marker->occupant = world.numNPCs - 1;
-			npc->marker = i;
-			npc->props.x = marker->position.x << 3;
-			npc->props.y = marker->position.y << 3;
-			break;
+			Coords position = marker->position;
+			bool valid;
+
+			marker->position = (Coords){-1, -1};
+			valid = checkHousingValid(position);
+			marker = &world.markers[i];
+			marker->position = position;
+			if(!valid) continue;
 		}
+
+		addNPC(npcToAdd);
+		npc = &world.npcs[world.numNPCs - 1];
+		marker->occupant = world.numNPCs - 1;
+		npc->marker = i;
+		npc->props.x = marker->position.x << 3;
+		npc->props.y = marker->position.y << 3;
+		return;
 	}
 }
 
@@ -355,93 +370,13 @@ bool npcTalk(int numDialogue, char **dialogue, enum MenuTypes type)
 	}
 }
 
+/* Re-checks a house marker with the Terraria housing rules (housing.c). The
+   marker sits 3 tiles above its home tile, inside the room. */
 bool checkHousingValid(Coords position)
 {
-	short idx = 0;
-	int deltas[4][2] = {
-		{-1, 0},
-		{1, 0},
-		{0, -1},
-		{0, 1}
-	};
-	bool checkAdjacent;
-	short end = 0;
-	Coords toCheck;
-	bool isAlreadyPresent;
-	int x, y;
+	struct HousingCheck check;
 
-	bool hasChair = false;
-	bool hasTable = false;
-	bool hasLight = false;
-
-	for(int i = 0; i < CHECK_BUFFER_SIZE; i++) checkCoords[i] = (Coords){-1, -1};
-
-	checkCoords[idx] = position;
-
-	while(idx <= end)
-	{
-		x = checkCoords[idx].x;
-		y = checkCoords[idx].y;
-
-		if(x < 0 || x >= game.WORLD_WIDTH || y < 0 || y >= game.WORLD_HEIGHT) return false;
-
-		for(int i = 0; i < world.numMarkers; i++)
-		{
-			if(world.markers[i].position.x == x && world.markers[i].position.y == y)
-			{
-				return false;
-			}
-		}
-		checkAdjacent = true;
-		switch(getTile(x, y).id)
-		{
-			case TILE_NOTHING:
-				break;
-			
-			case TILE_CHAIR_L:
-			case TILE_CHAIR_R:
-				hasChair = true;
-				break;
-			
-			case TILE_WBENCH_L:
-			case TILE_WBENCH_R:
-				hasTable = true;
-				break;
-			
-			case TILE_TORCH:
-				hasLight = true;
-				break;
-			
-			default:
-				checkAdjacent = false;
-				break;
-		}
-
-		if(checkAdjacent)
-		{
-			for(int i = 0; i < 4; i++)
-			{
-				toCheck = (Coords){x + deltas[i][0], y + deltas[i][1]};
-				isAlreadyPresent = false;
-				for(int check = 0; check <= end; check++)
-				{
-					if(toCheck.x == checkCoords[check].x && toCheck.y == checkCoords[check].y)
-					{
-						isAlreadyPresent = true;
-						break;
-					}
-				}
-				if(isAlreadyPresent) continue;
-				end++;
-				if(end == CHECK_BUFFER_SIZE) return false;
-				checkCoords[end] = toCheck;
-			}
-		}
-
-		idx++;
-	}
-
-	return idx >= 60 && hasChair && hasTable && hasLight;
+	return housingCheckRoom(position, &check, -1) == HOUSING_OK;
 }
 
 void addMarker(Coords position)
@@ -463,8 +398,13 @@ bool removeMarker(int idx)
 	HouseMarker *marker = &world.markers[idx];
 
 	if(marker->occupant != -1) world.npcs[marker->occupant].marker = -1;
-	*marker = world.markers[world.numMarkers - 1];
-	if(marker->occupant != -1) world.npcs[marker->occupant].marker = idx;
+//	Move the last marker into the hole, unless this is the last one: copying
+//	it onto itself used to re-link the evicted NPC to the removed house
+	if(idx != world.numMarkers - 1)
+	{
+		*marker = world.markers[world.numMarkers - 1];
+		if(marker->occupant != -1) world.npcs[marker->occupant].marker = idx;
+	}
 	world.numMarkers--;
 	if(world.numMarkers == 0) { free(world.markers); world.markers = NULL; }
 	/* Keep bounded capacity on removal, avoiding realloc churn. */

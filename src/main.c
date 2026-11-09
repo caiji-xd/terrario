@@ -25,6 +25,7 @@
 #include "optimise.h"
 #include "npc.h"
 #include "chat.h"
+#include "housing.h"
 
 // Syscalls
 const unsigned int sc003B[] = { SCA, SCB, SCE, 0x003B };
@@ -91,6 +92,10 @@ bool gameLoop(volatile int *flag)
 		if(frames & 1 && world.explosion.numParticles > 0) updateExplosion();
 		if(frames % 8 == 0) worldUpdate();
 		if(frames % 3600 == 0) doMarkerChecks();
+//		Look for new houses around the player, a tile at a time like
+//		Terraria's background house search
+		if(frames % 20 == 0) housingTryAutoFind();
+		if(housingHighlightTicks > 0) housingHighlightTicks--;
 
 		doEntityCycle(frames);
 		doSpawningCycle();
@@ -182,6 +187,11 @@ int main(void)
 	allocCheck(save.tileData);
 	memset(save.tileData, 0, save.tileDataSize);
 
+	/* Background walls: 4 bits per tile, 6 kB */
+	uint8_t *wallData = malloc(game.WORLD_HEIGHT * game.WORLD_WIDTH / 2);
+	allocCheck(wallData);
+	memset(wallData, 0, game.WORLD_HEIGHT * game.WORLD_WIDTH / 2);
+
 	unsigned int seed = RTC_GetTicks();
 	srand(seed);
 //	Mix in another value so two new worlds started on the same RTC tick don't
@@ -234,6 +244,7 @@ int main(void)
 	world = (struct World)
 	{
 		.tiles = (Tile*)save.tileData,
+		.walls = wallData,
 
 		.entities = malloc(MAX_ENTITIES * sizeof(Entity)),
 
@@ -355,6 +366,7 @@ int main(void)
 	if(world.npcs != NULL) free(world.npcs);
 	if(world.markers != NULL) free(world.markers);
 	free(save.tileData);
+	free(world.walls);
 	streamFree();
 	if(save.error != -99) saveFailMenu();
 	

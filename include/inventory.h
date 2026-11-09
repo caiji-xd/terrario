@@ -13,6 +13,7 @@ The inventory menu and API functions.
 #include "menu.h"
 
 #define NUM_PICKS 4
+#define NUM_HAMMERS 4
 #define NUM_SWORDS 5
 #define NUM_ARMOUR 12
 
@@ -91,6 +92,16 @@ enum Items {
 	ITEM_SAWMILL,
 	ITEM_LOOM,
 	ITEM_BED,
+	ITEM_WOODEN_HAMMER,
+	ITEM_COPPER_HAMMER,
+	ITEM_TIN_HAMMER,
+	ITEM_IRON_HAMMER,
+	ITEM_DIRT_WALL,
+	ITEM_STONE_WALL,
+	ITEM_WOOD_WALL,
+	ITEM_PLANKED_WALL,
+	ITEM_GLASS_WALL,
+	ITEM_MUD_WALL,
 
 	ITEMS_COUNT
 };
@@ -177,6 +188,9 @@ struct ArmourData {
 };
 
 extern const struct PickData pickData[NUM_PICKS];
+/* Hammers reuse the pick structure: power is the hammer power in percent and
+   targeted tracks the wall being hammered */
+extern const struct PickData hammerData[NUM_HAMMERS];
 extern const struct SwordData swordData[NUM_SWORDS];
 extern const struct ArmourData armourData[NUM_ARMOUR];
 
@@ -188,7 +202,9 @@ enum ToolTypes {
 	TOOL_TYPE_HELMET,
 	TOOL_TYPE_TORSO,
 	TOOL_TYPE_PANTS,
-	TOOL_TYPE_OTHER
+	TOOL_TYPE_OTHER,
+	TOOL_TYPE_HAMMER,
+	TOOL_TYPE_WALL		// Placeable background wall
 };
 
 struct ItemData {

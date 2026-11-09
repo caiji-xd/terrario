@@ -84,7 +84,20 @@ const struct ItemData items[] = {
 	{	99,		0,		TILE_SAWMILL_L,		"Sawmill",				TOOL_TYPE_NONE		},	// ITEM_SAWMILL
 	{	99,		0,		TILE_LOOM_L,		"Loom",					TOOL_TYPE_NONE		},	// ITEM_LOOM
 	{	99,		0,		TILE_BED_EDGE,		"Bed",					TOOL_TYPE_NONE		},	// ITEM_BED
+	{	1,		0,		TILE_NULL,			"Wooden Hammer",		TOOL_TYPE_HAMMER	},	// ITEM_WOODEN_HAMMER
+	{	1,		0,		TILE_NULL,			"Copper Hammer",		TOOL_TYPE_HAMMER	},	// ITEM_COPPER_HAMMER
+	{	1,		0,		TILE_NULL,			"Tin Hammer",			TOOL_TYPE_HAMMER	},	// ITEM_TIN_HAMMER
+	{	1,		0,		TILE_NULL,			"Iron Hammer",			TOOL_TYPE_HAMMER	},	// ITEM_IRON_HAMMER
+//	Walls: the tile column is unused, see itemWall() in wall.c
+	{	999,	0,		TILE_NULL,			"Dirt Wall",			TOOL_TYPE_WALL		},	// ITEM_DIRT_WALL
+	{	999,	0,		TILE_NULL,			"Stone Wall",			TOOL_TYPE_WALL		},	// ITEM_STONE_WALL
+	{	999,	0,		TILE_NULL,			"Wood Wall",			TOOL_TYPE_WALL		},	// ITEM_WOOD_WALL
+	{	999,	0,		TILE_NULL,			"Planked Wall",			TOOL_TYPE_WALL		},	// ITEM_PLANKED_WALL
+	{	999,	0,		TILE_NULL,			"Glass Wall",			TOOL_TYPE_WALL		},	// ITEM_GLASS_WALL
+	{	999,	0,		TILE_NULL,			"Mud Wall",				TOOL_TYPE_WALL		},	// ITEM_MUD_WALL
 };
+
+_Static_assert(sizeof(items) / sizeof(items[0]) == ITEMS_COUNT, "every item needs an entry in items[]");
 
 extern bopti_image_t img_swing_copper_pick, img_swing_iron_pick, img_swing_tin_pick, img_swing_cactus_pick;
 
@@ -93,6 +106,17 @@ const struct PickData pickData[NUM_PICKS] = {
 	{.item = ITEM_IRON_PICK,	.power = 40,	.speed = 13,	.knockback = 2,	.damage = 5,	.swingSprite = &img_swing_iron_pick},
 	{.item = ITEM_TIN_PICK,		.power = 35,	.speed = 15,	.knockback = 2,	.damage = 5,	.swingSprite = &img_swing_tin_pick},
 	{.item = ITEM_CACTUS_PICK,	.power = 35,	.speed = 16,	.knockback = 2,	.damage = 4,	.swingSprite = &img_swing_cactus_pick},
+};
+
+extern bopti_image_t img_swing_wooden_hammer, img_swing_copper_hammer, img_swing_tin_hammer, img_swing_iron_hammer;
+
+/* Hammer power, tool speed, damage and knockback from the wiki's item data
+   (terraria.wiki.gg Cargo table "Items", desktop 1.4.5) */
+const struct PickData hammerData[NUM_HAMMERS] = {
+	{.item = ITEM_WOODEN_HAMMER,	.power = 25,	.speed = 25,	.knockback = 5,	.damage = 2,	.swingSprite = &img_swing_wooden_hammer},
+	{.item = ITEM_COPPER_HAMMER,	.power = 35,	.speed = 23,	.knockback = 5,	.damage = 4,	.swingSprite = &img_swing_copper_hammer},
+	{.item = ITEM_TIN_HAMMER,		.power = 38,	.speed = 21,	.knockback = 5,	.damage = 6,	.swingSprite = &img_swing_tin_hammer},
+	{.item = ITEM_IRON_HAMMER,		.power = 40,	.speed = 20,	.knockback = 5,	.damage = 7,	.swingSprite = &img_swing_iron_hammer},
 };
 
 extern bopti_image_t img_swing_zombie_arm, img_swing_copper_sword, img_swing_iron_sword, img_swing_tin_sword, img_swing_cactus_sword;
@@ -531,7 +555,7 @@ void registerHeld()
 	unsigned int currID = selected->id;
 	if(currID >= ITEMS_COUNT) { *selected = (Item){ITEM_NULL, PREFIX_NONE, 0}; currID = ITEM_NULL; }
 	if((unsigned)selected->prefix >= PREFIX_COUNT) selected->prefix = PREFIX_NONE;
-	if(items[currID].type != TOOL_TYPE_PICK && items[currID].type != TOOL_TYPE_SWORD) player.swingFrame = 0;
+	if(items[currID].type != TOOL_TYPE_PICK && items[currID].type != TOOL_TYPE_SWORD && items[currID].type != TOOL_TYPE_HAMMER) player.swingFrame = 0;
 
 	switch(items[currID].type)
 	{
@@ -544,6 +568,15 @@ void registerHeld()
 			}
 			break;
 					
+		case TOOL_TYPE_HAMMER:
+			player.tool.type = TOOL_TYPE_HAMMER;
+			for(int i = 0; i < NUM_HAMMERS; i++)
+			{
+				if(hammerData[i].item == currID) player.tool.data.pickData = hammerData[i];
+			}
+			player.combat.attack = player.tool.data.pickData.damage * prefixes[player.inventory.getSelected()->prefix].dmgdef;
+			break;
+
 		case TOOL_TYPE_SWORD:
 			player.tool.type = TOOL_TYPE_SWORD;
 			for(int i = 0; i < NUM_SWORDS; i++)
