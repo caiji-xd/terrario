@@ -188,7 +188,9 @@ static void renderStatusMessage()
 	if(statusMessageTicks <= 0) return;
 	while(*text && y < 40)
 	{
-		int len = strlen(text), cut = len;
+		int len = strlen(text);
+		int capacity = sizeof(line) - 1;
+		int cut = len < capacity ? len : capacity;
 		int width;
 
 		for(;;)
@@ -197,13 +199,10 @@ static void renderStatusMessage()
 			line[cut] = '\0';
 			dsize(line, NULL, &width, NULL);
 			if(width <= 124 || cut <= 1) break;
-			while(cut > 1 && text[cut - 1] != ' ') cut--;
-			if(cut > 1 && text[cut - 1] == ' ') cut--;
-			if(cut <= 1)
-			{
-				cut = 1;
-				while(cut < len && cut < 33) cut++;
-			}
+			int wordCut = cut;
+			while(wordCut > 1 && text[wordCut - 1] != ' ') wordCut--;
+			if(wordCut > 1) cut = wordCut - 1;
+			else cut--; /* A long word must still fit and make progress. */
 		}
 		dtext_opt(64, y, C_BLACK, C_WHITE, DTEXT_CENTER, DTEXT_TOP, line);
 		text += cut;
