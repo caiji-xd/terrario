@@ -341,9 +341,40 @@ def hammer_icon(name):
 	return img
 
 
+WALL_ITEM_PATTERNS = {
+	# Stepped silhouettes and recessed seams remain readable at 8x8.
+	"stone": (
+		" +++.++ ",
+		" .#..#. ",
+		"..##...+",
+		"+#..##..",
+		"..+.#..+",
+		".##..##.",
+		" +..+.. ",
+		" .##.#. ",
+	),
+	"wood": (
+		"++++++++",
+		".....#..",
+		" ###### ",
+		"++++++++",
+		"..#.....",
+		" ###### ",
+		"++++++++",
+		"...#...#",
+	),
+}
+
+
 def wall_icon(name):
-	"""A small, fully surrounded patch of the wall, like Terraria's wall
-	items (a wall frame with no neighbours)."""
+	"""Inventory-sized wall samples with their own silhouette and detail."""
+	if name in WALL_ITEM_PATTERNS:
+		img = Image.new("RGBA", (8, 8), T)
+		palette = {" ": T, ".": D, "#": B, "+": L}
+		for y, row in enumerate(WALL_ITEM_PATTERNS[name]):
+			for x, pixel in enumerate(row):
+				img.putpixel((x, y), palette[pixel])
+		return img
 	frame = wall_frame(name, 0, 0)
 	return frame.crop((1, 1, 9, 9))
 
