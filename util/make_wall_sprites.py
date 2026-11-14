@@ -2,9 +2,10 @@
 """
 make_wall_sprites.py - draws every background wall graphic of Terrario.
 
-All the art made here is drawn procedurally by this script (no Terraria
-sprite is used or traced). It is released with the rest of the image assets
-under CC BY 4.0, see docs/WALLS.md for the asset list.
+The assets are generated from original pixel patterns in this script. Stone
+and wood patterns are hand-drawn low-resolution studies of the supplied wall
+references, not imported or resized Terraria sprites. See docs/WALLS.md for
+asset licensing and the asset list.
 
 Usage (from the repository root, needs Pillow):
 	python3 util/make_wall_sprites.py           # writes the PNG assets
@@ -70,21 +71,84 @@ def tex_dirt(x, y, v):
 	return D
 
 
+# Hand-drawn low-resolution studies of the supplied Stone_Wall and Wood_Wall
+# references, not resized source sprites. Keep the background darker than blocks.
+# '.' = dark gray body, '#' = recessed black seam, '+' = light gray relief.
+STONE_PATTERNS = (
+	(
+		"..#...+#",
+		".#..+..#",
+		"#...###.",
+		".###.+..",
+		".+.#...+",
+		"...#..#.",
+		"+.#.##..",
+		"##.+..#.",
+	),
+	(
+		"..#.+..#",
+		".#...+.#",
+		"#..###..",
+		".##.+.#.",
+		"+..#...+",
+		"...#.+#.",
+		"..#.##..",
+		"##..+.#.",
+	),
+	(
+		"..#..+.#",
+		".#.....#",
+		"#.+.###.",
+		".###..+.",
+		"..+#....",
+		"...#.+#.",
+		".+#.##..",
+		"##....#.",
+	),
+)
+
+WOOD_PATTERNS = (
+	(
+		"+.+++.++",
+		"........",
+		".....#..",
+		"########",
+		"+++.++.+",
+		"........",
+		"..##....",
+		"########",
+	),
+	(
+		"+++.++.+",
+		"........",
+		"..#.....",
+		"########",
+		"+.+++.++",
+		"........",
+		".....##.",
+		"########",
+	),
+	(
+		"+.++++.+",
+		"........",
+		"......#.",
+		"########",
+		"++.+.+++",
+		"........",
+		".##.....",
+		"########",
+	),
+)
+
+
 def tex_stone(x, y, v):
-	# Cobbles: rounded dark stones with black gaps and a light glint each
-	cx, cy = (x + (y // 4) * 2 + v) % 4, y % 4
-	if cy == 3 or cx == 3: return B
-	if cx == 0 and cy == 0 and h32(2, x // 4, y // 4, v) % 3: return L
-	return D
+	# Uneven interlocking rubble, not a regular brick/cobble grid.
+	return {".": D, "#": B, "+": L}[STONE_PATTERNS[v][y][x]]
 
 
 def tex_wood(x, y, v):
-	# Horizontal boards with a dark seam, a lit top edge and one joint per board
-	if y % 4 == 3: return B
-	board = y // 4
-	if x == (v * 3 + board * 5 + 2) % 8: return B
-	if y % 4 == 0: return L if (x + v) % 3 else D
-	return D
+	# Continuous horizontal boards; short grain marks replace vertical joints.
+	return {".": D, "#": B, "+": L}[WOOD_PATTERNS[v][y][x]]
 
 
 def tex_planked(x, y, v):
