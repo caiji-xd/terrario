@@ -6,10 +6,11 @@
 
 #include <gint/gray.h>
 #include <gint/defs/util.h>
-#include <gint/bfile.h>
+#include <gint/gint.h>
 #include <gint/timer.h>
 
 #include "render.h"
+#include "save.h"
 #include "defs.h"
 #include "world.h"
 #include "entity.h"
@@ -573,6 +574,21 @@ void render(bool renderHUD)
 //	Render the chat
 	renderChat();
 	renderStatusMessage();
+}
+
+void takeVRAMCapture(void)
+{
+	enum { planeSize = SCREEN_WIDTH * SCREEN_HEIGHT / 8 };
+	uint32_t *light, *dark;
+	uint8_t *frame = malloc(2 * planeSize);
+	if(frame == NULL) return;
+
+	dgray_getscreen(&light, &dark);
+	memcpy(frame, light, planeSize);
+	memcpy(frame + planeSize, dark, planeSize);
+	gint_world_switch(GINT_CALL(&writeWholeFile, (void *)u"\\\\fls0\\capt.vram",
+		(void *)frame, 2 * planeSize));
+	free(frame);
 }
 
 void createExplosion(int x, int y)

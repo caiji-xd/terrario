@@ -260,6 +260,10 @@ enum UpdateReturnCodes keyboardUpdate()
 				}
 				break;
 			
+			case KEY_DIV:
+				if(key.type == KEYEV_DOWN) takeVRAMCapture();
+				break;
+
 			case KEY_F1: case KEY_F2: case KEY_F3: case KEY_F4: case KEY_F5:
 				player.inventory.ticksSinceInteracted = 0;
 				if(player.useFrames == 0 && !playerDead) player.inventory.hotbarSlot = keycode_function(key.key) - 1;

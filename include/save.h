@@ -43,6 +43,9 @@ struct SaveData {
 extern struct SaveData save;
 extern struct Player player;
 
+/* Replace a storage file with an even-sized buffer inside a gint_world_switch(). */
+bool writeWholeFile(const uint16_t *path, const void *data, int size);
+
 /* saveGame
 Saves the player, NPCs and every modified chunk in RAM. Must be called inside
 a gint_world_switch().

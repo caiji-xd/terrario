@@ -5,6 +5,7 @@
 #include <gint/defs/util.h>
 
 #include "map.h"
+#include "render.h"
 #include "world.h"
 #include "wall.h"
 #include "stream.h"
@@ -89,6 +90,9 @@ void mapMenu()
 			case KEY_UP: top = max(0, top - 4); break;
 			case KEY_DOWN: top = min(maxTop, top + 4); break;
 			case KEY_F1: walls = !walls; break;
+			case KEY_DIV:
+				if(key.type == KEYEV_DOWN) takeVRAMCapture();
+				break;
 			case KEY_EXIT:
 			case KEY_OPTN:
 			case KEY_MENU:

@@ -209,6 +209,10 @@ void craftingMenu()
 		key = getkey_opt(GETKEY_REP_ALL, NULL);
 		switch(key.key)
 		{
+			case KEY_DIV:
+				if(key.type == KEYEV_DOWN) takeVRAMCapture();
+				break;
+
 			case KEY_SHIFT: case KEY_ALPHA:
 				if(key.type == KEYEV_DOWN) return;
 				break;

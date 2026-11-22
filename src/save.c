@@ -190,7 +190,7 @@ void clearSaveFolder()
 	}
 }
 
-static bool writeWholeFile(const uint16_t *path, const void *data, int size)
+bool writeWholeFile(const uint16_t *path, const void *data, int size)
 {
 	int fileSize = size;
 	int descriptor;

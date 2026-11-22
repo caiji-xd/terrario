@@ -5,6 +5,7 @@
 #include <gint/gint.h>
 
 #include "inventory.h"
+#include "render.h"
 #include "world.h"
 #include "entity.h"
 
@@ -459,6 +460,9 @@ void inventoryMenu(struct Chest* chest)
 				}
 				break;
 			
+			case KEY_DIV:
+				if(key.type == KEYEV_DOWN) takeVRAMCapture();
+				break;
 			case KEY_F6:
 				tab = TAB_EQUIP;
 				break;

@@ -112,6 +112,9 @@ int mainMenu()
 		{
 			switch(key.key)
 			{
+				case KEY_DIV:
+					if(key.type == KEYEV_DOWN) takeVRAMCapture();
+					break;
 
 				case KEY_MENU:
 					timer_stop(timer);
@@ -472,6 +475,7 @@ void aboutMenu()
 		"7: Use Held Item",
 		"9: Interact",
 		"F1,F2,F3: Hotbar",
+		"/: Screenshot",
 		"[SHIFT]: Inventory",
 		"[ALPHA]: Crafting",
 		"[MENU]: Exit",

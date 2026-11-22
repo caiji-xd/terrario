@@ -358,6 +358,10 @@ bool npcTalk(int numDialogue, char **dialogue, enum MenuTypes type)
 		
 		switch(key.key)
 		{
+			case KEY_DIV:
+				if(key.type == KEYEV_DOWN) takeVRAMCapture();
+				break;
+
 			case KEY_F1:
 				return true;
 

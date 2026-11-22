@@ -46,6 +46,9 @@ renderHUD: Whether to render the HUD.
 */
 void render(bool renderHUD);
 
+/* Save the displayed grayscale frame to capt.vram in storage memory. */
+void takeVRAMCapture(void);
+
 /* renderItem
 Renders the given item.
 
